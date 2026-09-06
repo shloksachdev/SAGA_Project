@@ -1,0 +1,7 @@
+# Force LF everywhere. This matters most for setup.sh: if it ever gets
+# saved/committed with Windows-style CRLF line endings, bash on Mac/Linux
+# (and Git Bash/WSL on Windows) will fail with cryptic errors like
+# "$'\r': command not found" or "bad interpreter". Forcing LF in the repo
+# means everyone's checkout is consistent regardless of what OS they're on.
+* text=auto eol=lf
+*.sh text eol=lf

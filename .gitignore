@@ -1,0 +1,22 @@
+# Secrets -- never commit this
+.env
+
+# LocalStack's mounted volume (runtime data, not source)
+volume/
+
+# Lambda build artifacts -- regenerable from the .py source with deploy-lambda.ps1
+*.zip
+
+# Stray test files from manual `aws lambda invoke` testing
+response.json
+payload.json
+
+# Python
+__pycache__/
+*.pyc
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
