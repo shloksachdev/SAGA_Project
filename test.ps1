@@ -1,15 +1,17 @@
 <#
-Tests all 4 saga Lambda functions (both forward and compensating actions)
-without deploying or redeploying anything -- use this to verify the current
-deployed state, e.g. after a restart, or before wiring them into Step
-Functions / EventBridge.
+Full pipeline: deploys (or updates) all 4 saga Lambda functions in the
+proper order (Order -> Payment -> Inventory -> Notification), via
+deploy-lambda.ps1, then independently re-verifies all 4 with direct
+invoke tests.
 
-Same "no silent errors" checking as deploy-lambda.ps1: checks the actual
-exit code AND checks for FunctionError in the invoke response, since a
-crashed Lambda still returns StatusCode 200.
+Same "no silent errors" checking throughout: checks the actual exit code
+of every command AND checks for FunctionError in invoke responses, since
+a crashed Lambda still returns StatusCode 200.
 
 Usage: .\test.ps1
-Exit code 0 = all 8 tests passed. Exit code 1 = at least one failed.
+Requires deploy-lambda.ps1 in the same directory.
+Exit code 0 = every deploy succeeded AND all 8 re-verification tests
+passed. Exit code 1 = at least one deploy or test failed.
 #>
 
 $Endpoint = "http://localhost:4566"
@@ -19,16 +21,20 @@ $env:AWS_ACCESS_KEY_ID = "test"
 $env:AWS_SECRET_ACCESS_KEY = "test"
 $env:AWS_DEFAULT_REGION = $Region
 
-# The 4 services and their forward/compensate action names, matching
-# what was used when each was deployed with deploy-lambda.ps1.
+# The 4 services, their handler files, and forward/compensate action
+# names, in the proper deploy order: Order first (creates the DynamoDB
+# item), then Payment, Inventory, Notification (each updates that same
+# item). Deployment order doesn't strictly matter functionally, but
+# matching the natural saga sequence makes the output easier to read.
 $Services = @(
-    @{ Name = "Order";        Forward = "create";  Compensate = "cancel" }
-    @{ Name = "Payment";      Forward = "charge";  Compensate = "compensate" }
-    @{ Name = "Inventory";    Forward = "reserve"; Compensate = "release" }
-    @{ Name = "Notification"; Forward = "notify";  Compensate = "unnotify" }
+    @{ Name = "Order";        HandlerFile = "order_handler.py";        Forward = "create";  Compensate = "cancel" }
+    @{ Name = "Payment";      HandlerFile = "payment_handler.py";      Forward = "charge";  Compensate = "compensate" }
+    @{ Name = "Inventory";    HandlerFile = "inventory_handler.py";    Forward = "reserve"; Compensate = "release" }
+    @{ Name = "Notification"; HandlerFile = "notification_handler.py"; Forward = "notify";  Compensate = "unnotify" }
 )
 
 $OrderId = "order-123"
+$overallSuccess = $true
 
 # --- Preflight ---
 
@@ -48,6 +54,45 @@ try {
     Write-Host "ERROR: Could not reach LocalStack at $Endpoint -- is 'docker compose up -d' running?" -ForegroundColor Red
     Write-Host "  $($_.Exception.Message)" -ForegroundColor Red
     exit 1
+}
+
+if (-not (Test-Path ".\deploy-lambda.ps1")) {
+    Write-Host "ERROR: deploy-lambda.ps1 not found in current directory ($(Get-Location))." -ForegroundColor Red
+    exit 1
+}
+
+# --- Deploy phase ---
+#
+# deploy-lambda.ps1 ends with 'exit 0' / 'exit 1'. Calling it directly as
+# '& .\deploy-lambda.ps1 ...' would run it in THIS process, so its exit
+# would terminate test.ps1 itself on the first failure, breaking the loop
+# over the remaining services. Invoking it via 'powershell -File' instead
+# runs it as a genuine child process -- its exit only ends that child, and
+# $LASTEXITCODE afterward tells us how it went without taking test.ps1 down
+# with it.
+
+Write-Host "=== Deploying all 4 Lambda functions ===" -ForegroundColor Cyan
+Write-Host ""
+
+foreach ($service in $Services) {
+    Write-Host "-- Deploying $($service.Name) --"
+
+    powershell -NoProfile -File ".\deploy-lambda.ps1" `
+        -FunctionName $service.Name `
+        -HandlerFile $service.HandlerFile `
+        -ForwardAction $service.Forward `
+        -CompensateAction $service.Compensate
+
+    $deployExitCode = $LASTEXITCODE
+
+    if ($deployExitCode -eq 0) {
+        Write-Host "  [DEPLOY OK] $($service.Name)" -ForegroundColor Green
+    } else {
+        Write-Host "  [DEPLOY FAILED] $($service.Name) (exit $deployExitCode) -- see output above for details" -ForegroundColor Red
+        $overallSuccess = $false
+    }
+
+    Write-Host ""
 }
 
 # --- Test helper: same explicit checks as deploy-lambda.ps1's version ---
@@ -86,9 +131,9 @@ function Invoke-LambdaTest {
     return @{ Passed = $true; Detail = (Get-Content $responsePath -Raw) }
 }
 
-# --- Run all tests ---
+# --- Test phase (independent re-verification, separate from deploy-lambda.ps1's own checks) ---
 
-Write-Host "=== Testing all 4 Lambda functions ===" -ForegroundColor Cyan
+Write-Host "=== Re-verifying all 4 Lambda functions directly ===" -ForegroundColor Cyan
 Write-Host ""
 
 $results = @()
@@ -116,12 +161,17 @@ foreach ($service in $Services) {
 $passed = ($results | Where-Object { $_.Passed }).Count
 $total = $results.Count
 
-Write-Host "=== Summary: $passed / $total tests passed ===" -ForegroundColor Cyan
+if ($passed -lt $total) {
+    $overallSuccess = $false
+}
 
-if ($passed -eq $total) {
-    Write-Host "All Lambda functions are deployed and working." -ForegroundColor Green
+Write-Host "=== Summary ===" -ForegroundColor Cyan
+Write-Host "Re-verification: $passed / $total direct invoke tests passed"
+
+if ($overallSuccess) {
+    Write-Host "All 4 Lambdas deployed successfully and all tests passed." -ForegroundColor Green
     exit 0
 } else {
-    Write-Host "Some tests failed -- see red output above for which function/action and why." -ForegroundColor Red
+    Write-Host "At least one deploy step or test failed -- see red output above for exactly which and why." -ForegroundColor Red
     exit 1
 }
