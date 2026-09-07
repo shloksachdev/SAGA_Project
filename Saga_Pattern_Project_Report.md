@@ -172,7 +172,7 @@ Say Payment fails after Order and (in some paths) other steps have already compl
 
 ## 7. Implementation Plan on LocalStack
 
-1. **Spin up LocalStack** (Docker, with lambda/dynamodb/events/states/logs enabled) and install `awslocal` so every CLI/SDK call targets it by default. Verify the Step Functions → EventBridge emulation path early, since it has had version-specific gaps and both Path A and Path C depend on it.
+1. **Spin up LocalStack** (Docker, with lambda/dynamodb/events/states/logs enabled). CLI/SDK calls target it via `--endpoint-url=http://localhost:4566` rather than the `awslocal` wrapper — `awslocal` has a known compatibility bug with AWS CLI v2 on Windows (`Could not determine home directory`), and since the team is entirely on Windows, calling the CLI directly avoids it. Verify the Step Functions → EventBridge emulation path early, since it has had version-specific gaps and both Path A and Path C depend on it.
 2. **Deploy the shared building blocks**: the four Lambdas, the `orders` table, the `leases` table, and the EventBridge bus — once, via the same IaC tooling, so every path points at identical infrastructure.
 3. **Build Path A**: a Step Functions state machine with Retry/Catch and compensating states.
 4. **Build Path B**: EventBridge rules per service, with compensating-event publishers and handlers.
@@ -220,7 +220,7 @@ All metrics are computed from one shared log schema (`saga_id`, `path`, `event`,
 
 ## 10. Cost & Resources
 
-All four paths run entirely on LocalStack — no AWS account, no billing, no cloud spend. Total project cost: **$0**. The only resource to manage is local machine capacity: running Lambda, DynamoDB, EventBridge, and Step Functions emulation simultaneously in Docker requires roughly 8GB+ of free RAM on at least one team member's machine, which should be verified early rather than assumed.
+All four paths run entirely on LocalStack — no AWS account, no billing, no cloud spend. Total project cost: **$0**. A free LocalStack account (Hobby plan, non-commercial use) is required to obtain an auth token before the environment will start; this is a one-time signup step, not a cost. LocalStack moved to this account-gated model in March 2026, replacing the previous no-signup Community Edition. Note also that the Hobby plan does not include LocalStack's paid state-persistence feature, so the emulated environment does not retain resources across a container restart — the team's setup scripts recreate the full environment on demand rather than relying on anything persisting. The only other resource to manage is local machine capacity: running Lambda, DynamoDB, EventBridge, and Step Functions emulation simultaneously in Docker requires roughly 8GB+ of free RAM on at least one team member's machine, which should be verified early rather than assumed.
 
 ---
 
