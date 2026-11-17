@@ -6,14 +6,21 @@ volume/
 
 # Lambda build artifacts -- regenerable from the .py source with deploy-lambda.ps1
 *.zip
+build/
+
+# Test and run results
+results/raw/
+.pytest_cache/
 
 # Stray test files from manual `aws lambda invoke` testing
 response.json
 payload.json
+payload_compensate.json
 
 # Python
 __pycache__/
 *.pyc
+*.pyo
 
 # OS / editor cruft
 .DS_Store

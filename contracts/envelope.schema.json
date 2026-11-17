@@ -1,0 +1,87 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SagaEnvelope",
+  "description": "Schema for saga execution envelope (Phase 0)",
+  "type": "object",
+  "required": [
+    "sagaId",
+    "path",
+    "workload"
+  ],
+  "properties": {
+    "sagaId": {
+      "type": "string",
+      "description": "Unique identifier for this saga instance (uuid4 or string)"
+    },
+    "path": {
+      "type": "string",
+      "enum": ["A", "B", "C", "D"],
+      "description": "Coordination path"
+    },
+    "workload": {
+      "type": "string",
+      "enum": ["order", "trainticket", "wide-2", "wide-4", "wide-6"],
+      "description": "Workload configuration identifier"
+    },
+    "runTag": {
+      "type": "string",
+      "description": "Identifier for the experiment run or batch"
+    },
+    "startedAt": {
+      "type": "integer",
+      "description": "Epoch timestamp in milliseconds when saga started"
+    },
+    "payload": {
+      "type": "object",
+      "description": "Business payload for the saga steps"
+    },
+    "workScale": {
+      "type": "number",
+      "minimum": 0,
+      "default": 1.0,
+      "description": "Scaling factor for simulated step work times"
+    },
+    "faults": {
+      "type": "object",
+      "description": "Fault injection configuration keyed by step name",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "forward": {
+            "type": "string",
+            "enum": ["fail"]
+          },
+          "errorName": {
+            "type": "string"
+          },
+          "compFailFirstN": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "leaderFault": {
+      "type": "string",
+      "description": "Path D only: crash_after:K instructs leader to crash without releasing lease after K dispatches"
+    },
+    "compMode": {
+      "type": "string",
+      "enum": ["parallel", "lifo"],
+      "default": "parallel",
+      "description": "Path D compensation dispatch mode"
+    },
+    "action": {
+      "type": "string",
+      "description": "Legacy/direct action override (e.g. create, cancel, charge)"
+    },
+    "orderId": {
+      "type": "string",
+      "description": "Legacy/compatibility order identifier"
+    },
+    "simulateFailure": {
+      "type": "boolean",
+      "description": "Legacy failure simulation flag"
+    }
+  }
+}
