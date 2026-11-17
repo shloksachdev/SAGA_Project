@@ -460,3 +460,98 @@ Exit code: 0
 6 passed, 1 warning in 172.05s (0:02:52)
 Exit code: 0
 ```
+
+---
+
+## Phase 3: Path B (Pure Choreography)
+
+### Goal
+EventBridge-only saga with a reverse event chain for compensation (D9, D10).
+
+### Completed Tasks
+1. `paths/b/provision.py`:
+   - Programmatically deployed 4 forward rules on `saga-bus-b`:
+     - `path-b-fwd-order` matching `detail-type: ["SagaStarted"]` -> `Order` Lambda
+     - `path-b-fwd-payment` matching `source: ["saga.order"]`, `detail-type: ["OrderCreated"]` -> `Payment` Lambda
+     - `path-b-fwd-inventory` matching `source: ["saga.payment"]`, `detail-type: ["PaymentCharged"]` -> `Inventory` Lambda
+     - `path-b-fwd-notification` matching `source: ["saga.inventory"]`, `detail-type: ["InventoryReserved"]` -> `Notification` Lambda
+   - Programmatically deployed 3 reverse compensation rules (D9 reverse chain) on `saga-bus-b`:
+     - `path-b-comp-inventory` matching `source: ["saga.notification"]`, `detail-type: ["NotificationFailed", "NotificationCompensated"]` -> `Inventory` Lambda
+     - `path-b-comp-payment` matching `source: ["saga.inventory"]`, `detail-type: ["InventoryFailed", "InventoryCompensated"]` -> `Payment` Lambda
+     - `path-b-comp-order` matching `source: ["saga.payment"]`, `detail-type: ["PaymentFailed", "PaymentCompensated"]` -> `Order` Lambda
+   - Configured `InputPath: "$.detail"` on each target and added `lambda:InvokeFunction` permissions with principal `events.amazonaws.com`.
+2. Handlers in Path B:
+   - Perform action, update `SagaSteps`, publish result events (`OrderCreated`, `PaymentCharged`, `InventoryReserved`, `NotificationSent`, `PaymentFailed`, `InventoryFailed`, `NotificationFailed`, `PaymentCompensated`, `InventoryCompensated`, `OrderCancelled`).
+   - Business failures return normally after publishing failure events (D13).
+   - Final forward step (`Notification`) emits `SAGA_COMPLETED` and marks `SagaRuns.status = COMPLETED`.
+   - Final compensation step (`Order cancel`) emits `SAGA_COMPENSATED` and marks `SagaRuns.status = COMPENSATED`.
+3. `paths/b/run.py`:
+   - Emits `SAGA_STARTED`, initializes `SagaRuns` item, and publishes `SagaStarted` with `detail["action"] = "forward"` to `saga-bus-b`.
+   - Polls `SagaRuns` until terminal state (`COMPLETED`, `COMPENSATED`, `COMPENSATION_FAILED`) or timeout (60 s).
+4. In-handler compensation retry loop (Task 4):
+   - Implemented inside `common/handler_helper.py` using `COMP_INTERVAL_MS=1000` and `COMP_MAX_ATTEMPTS=3`.
+   - On retry attempt, increments `compInvocations` in `SagaSteps` and records `COMP_FAILED_ATTEMPT`.
+5. Provisioning integration:
+   - Wired `paths/b/provision.py` into `infra/provision.py`.
+
+---
+
+### Evidence
+
+#### 1. `pytest tests/phase3 -q` Output
+
+```text
+......                                                                   [100%]
+============================== warnings summary ===============================
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\site-packages\dateutil\tz\tz.py:37
+  C:\Users\shlok\AppData\Local\Programs\Python\Python312\Lib\site-packages\dateutil\tz\tz.py:37: DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.fromtimestamp(timestamp, datetime.UTC).
+    EPOCH = datetime.datetime.utcfromtimestamp(0)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+6 passed, 1 warning in 157.52s (0:02:37)
+```
+
+Verified scenarios:
+- **Happy Path** (`test_happy_path_choreography`): All 4 steps (Order, Payment, Inventory, Notification) COMPLETED via EventBridge bus `saga-bus-b`; `SagaRuns.status == COMPLETED`; `SAGA_STARTED` and `SAGA_COMPLETED` in trace: **PASS**
+- **Payment Failure** (`test_failure_at_payment`): Exactly Order compensated (`compApplied == 1`); Payment `status == FAILED` (not compensated); Inventory and Notification never ran; `STEP_FAILED` precedes `SAGA_COMPENSATED`; `SagaRuns.status == COMPENSATED`: **PASS**
+- **Inventory Failure** (`test_failure_at_inventory`): Payment and Order compensated in reverse order by `seq` via reverse event chain; Inventory `status == FAILED`; `SagaRuns.status == COMPENSATED`: **PASS**
+- **Notification Failure** (`test_failure_at_notification`): Inventory, Payment, Order all compensated in reverse order (`compensatedAt` ordering verified); Notification `status == FAILED`; `SagaRuns.status == COMPENSATED`: **PASS**
+- **Transient Compensation Failure Retry** (`test_transient_compensation_failure_with_retry`): `compFailFirstN=1` on Order; in-handler compensation retry loop succeeded; `COMP_FAILED_ATTEMPT` recorded in trace; run ends `COMPENSATED`; Order `compApplied == 1`, `compInvocations == 2`: **PASS**
+- **Duplicate Event Delivery** (`test_duplicate_event_delivery`): Duplicate delivery of `PaymentFailed` event leaves `compApplied == 1` and emits `COMP_DUPLICATE_IGNORED`: **PASS**
+
+#### 2. Full Regression Run (`pytest tests/phase1 tests/phase2 tests/phase3 -q`)
+
+```text
+..................                                                       [100%]
+============================== warnings summary ===============================
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\site-packages\dateutil\tz\tz.py:37
+  C:\Users\shlok\AppData\Local\Programs\Python\Python312\Lib\site-packages\dateutil\tz\tz.py:37: DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.fromtimestamp(timestamp, datetime.UTC).
+    EPOCH = datetime.datetime.utcfromtimestamp(0)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+18 passed, 1 warning in 511.40s (0:08:31)
+Exit code: 0
+```
+
+#### 3. `.\test.ps1` Regression Run
+
+```text
+=== Re-verifying all 4 Lambda functions directly ===
+-- Order --
+  [PASS] create: {"orderId": "order-123", "status": "ORDER_CREATED"}
+  [PASS] cancel: {"orderId": "order-123", "status": "ORDER_CANCELLED"}
+-- Payment --
+  [PASS] charge: {"orderId": "order-123", "status": "PAYMENT_COMPLETED"}
+  [PASS] compensate: {"orderId": "order-123", "status": "PAYMENT_COMPENSATED"}
+-- Inventory --
+  [PASS] reserve: {"orderId": "order-123", "status": "INVENTORY_RESERVED"}
+  [PASS] release: {"orderId": "order-123", "status": "INVENTORY_RELEASED"}
+-- Notification --
+  [PASS] notify: {"orderId": "order-123", "status": "NOTIFICATION_SENT"}
+  [PASS] unnotify: {"orderId": "order-123", "status": "NOTIFICATION_RETRACTED"}
+
+=== Summary ===
+Re-verification: 8 / 8 direct invoke tests passed
+All 4 Lambdas deployed successfully and all tests passed.
+Exit code: 0
+```

@@ -41,8 +41,8 @@ def execute_step(
         raise ValueError(f"Step {step_name} not found in workload {envelope.workload}")
 
     with metered_invocation(envelope.sagaId, actor=step_name, path=envelope.path):
-        is_forward = action in (step_cfg.forwardAction, "forward", "create")
-        is_compensate = action in (step_cfg.compensateAction, "compensate", "cancel")
+        is_forward = action in (step_cfg.forwardAction, "forward", "create", "charge", "reserve", "notify")
+        is_compensate = action in (step_cfg.compensateAction, "compensate", "cancel", "refund", "release", "unnotify")
 
         if is_forward:
             # 1. Idempotent forward start
@@ -89,6 +89,7 @@ def execute_step(
                 if should_publish and success_event_name:
                     bus_name = get_bus_for_path(envelope.path)
                     detail = envelope.to_dict()
+                    detail["action"] = "forward"
                     detail["step"] = step_name
                     detail["result"] = forward_status
                     detail["ts"] = now_ms()
@@ -112,6 +113,7 @@ def execute_step(
                 if is_event_driven:
                     bus_name = get_bus_for_path(envelope.path)
                     detail = envelope.to_dict()
+                    detail["action"] = "compensate"
                     detail["step"] = step_name
                     detail["error"] = str(e)
                     detail["ts"] = now_ms()
@@ -124,6 +126,23 @@ def execute_step(
                             detail=detail,
                             saga_id=envelope.sagaId,
                         )
+
+                    # In B and C, if Order itself fails in forward execution, no prior steps exist to compensate
+                    if step_name == "Order" and envelope.path in ("B", "C"):
+                        emit(envelope.sagaId, SAGA_COMPENSATED, actor=step_name, path=envelope.path)
+                        try:
+                            runs_table = get_table("SagaRuns")
+                            runs_table.update_item(
+                                Key={"sagaId": envelope.sagaId},
+                                UpdateExpression="SET #st = :comp, compensatedAt = :ts",
+                                ExpressionAttributeNames={"#st": "status"},
+                                ExpressionAttributeValues={
+                                    ":comp": STATUS_COMPENSATED,
+                                    ":ts": now_ms(),
+                                },
+                            )
+                        except Exception:
+                            pass
 
                     # Path D failure triggers election via CompensationNeeded
                     if envelope.path == "D":
@@ -156,22 +175,76 @@ def execute_step(
 
             # 3. Execution & Fault Injection
             attempt = getattr(status, "attempt", 1)
-            try:
-                apply_faults(envelope, step_name, phase="compensate", attempt=attempt)
-                compensate_fn(order_id, envelope)
-                complete_compensation(envelope.sagaId, step_name, path=envelope.path)
-            except Exception as e:
-                from common.contracts import COMP_FAILED_ATTEMPT
-                emit(
-                    envelope.sagaId,
-                    COMP_FAILED_ATTEMPT,
-                    step=step_name,
-                    actor=step_name,
-                    path=envelope.path,
-                    error=str(e),
-                    attempt=attempt,
-                )
-                raise e
+            # Compensation retry for B is done inside the handler (Task 4)
+            from common.policy import COMP_INTERVAL_MS, COMP_MAX_ATTEMPTS
+            max_attempts = COMP_MAX_ATTEMPTS if envelope.path == "B" else attempt
+
+            last_err = None
+            for cur_attempt in range(attempt, max_attempts + 1):
+                if cur_attempt > attempt:
+                    try:
+                        steps_table = get_table("SagaSteps")
+                        steps_table.update_item(
+                            Key={"sagaId": envelope.sagaId, "step": step_name},
+                            UpdateExpression="ADD compInvocations :one",
+                            ExpressionAttributeValues={":one": 1},
+                        )
+                    except Exception:
+                        pass
+
+                try:
+                    apply_faults(envelope, step_name, phase="compensate", attempt=cur_attempt)
+                    compensate_fn(order_id, envelope)
+                    complete_compensation(envelope.sagaId, step_name, path=envelope.path)
+                    last_err = None
+                    break
+                except Exception as e:
+                    last_err = e
+                    from common.contracts import COMP_FAILED_ATTEMPT
+                    emit(
+                        envelope.sagaId,
+                        COMP_FAILED_ATTEMPT,
+                        step=step_name,
+                        actor=step_name,
+                        path=envelope.path,
+                        error=str(e),
+                        attempt=cur_attempt,
+                    )
+                    if cur_attempt < max_attempts:
+                        import time
+                        time.sleep(COMP_INTERVAL_MS / 1000.0)
+
+            if last_err is not None:
+                if envelope.path in ("B", "D") or (envelope.path == "C" and step_name == "Notification"):
+                    from common.contracts import SAGA_COMPENSATION_FAILED
+                    emit(
+                        envelope.sagaId,
+                        SAGA_COMPENSATION_FAILED,
+                        step=step_name,
+                        actor=step_name,
+                        path=envelope.path,
+                        error=str(last_err),
+                    )
+                    try:
+                        runs_table = get_table("SagaRuns")
+                        runs_table.update_item(
+                            Key={"sagaId": envelope.sagaId},
+                            UpdateExpression="SET #st = :failed, failedStep = :step, errorName = :err",
+                            ExpressionAttributeNames={"#st": "status"},
+                            ExpressionAttributeValues={
+                                ":failed": "COMPENSATION_FAILED",
+                                ":step": step_name,
+                                ":err": str(last_err),
+                            },
+                        )
+                    except Exception:
+                        pass
+                    return {
+                        "orderId": order_id,
+                        "status": "COMPENSATION_FAILED",
+                        "error": str(last_err),
+                    }
+                raise last_err
 
             # In A, B, and C, the final compensating step is Order cancel (D9, §3.3)
             if step_name == "Order" and envelope.path in ("A", "B", "C"):
@@ -194,6 +267,7 @@ def execute_step(
             if envelope.path == "B" and compensate_event_name:
                 bus_name = get_bus_for_path(envelope.path)
                 detail = envelope.to_dict()
+                detail["action"] = "compensate"
                 detail["step"] = step_name
                 detail["result"] = compensate_status
                 detail["ts"] = now_ms()
