@@ -244,3 +244,7 @@ if ($startResult) {
 } else {
     Write-Host "  Could not start execution -- check the state machine creation output above for errors." -ForegroundColor Red
 }
+
+Write-Host ""
+Write-Host "=== Running infra/provision.py for shared saga tables and buses ===" -ForegroundColor Cyan
+python infra/provision.py

@@ -74,11 +74,11 @@ Write-Host "=== Deploying $FunctionName ===" -ForegroundColor Cyan
 if (Test-Path $zipPath) {
     Remove-Item $zipPath -ErrorAction Stop
 }
-Write-Host "Zipping $HandlerFile -> $zipPath ..."
-Compress-Archive -Path $HandlerFile -DestinationPath $zipPath -Force
+Write-Host "Zipping $HandlerFile and common/ -> $zipPath ..."
+python infra/package.py $HandlerFile $zipPath
 
 if (-not (Test-Path $zipPath)) {
-    Write-Host "ERROR: Zip creation failed -- $zipPath does not exist after Compress-Archive." -ForegroundColor Red
+    Write-Host "ERROR: Zip creation failed -- $zipPath does not exist after packaging." -ForegroundColor Red
     exit 1
 }
 Write-Host "  OK: $zipPath created."
@@ -89,17 +89,18 @@ $existing = & aws --endpoint-url=$Endpoint --region $Region lambda get-function 
 $existsExitCode = $LASTEXITCODE
 
 if ($existsExitCode -eq 0) {
-    Write-Host "Function already exists -- updating code..."
+    Write-Host "Function already exists -- updating code and config..."
     $updateOutput = & aws --endpoint-url=$Endpoint --region $Region lambda update-function-code --function-name $FunctionName --zip-file "fileb://$zipPath" 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Host "ERROR: update-function-code failed (exit $LASTEXITCODE):" -ForegroundColor Red
         Write-Host "  $($updateOutput | Out-String)" -ForegroundColor Red
         exit 1
     }
+    & aws --endpoint-url=$Endpoint --region $Region lambda update-function-configuration --function-name $FunctionName --timeout 60 2>&1 | Out-Null
     Write-Host "  OK: code updated." -ForegroundColor Green
 } else {
     Write-Host "Function doesn't exist yet -- creating..."
-    $createOutput = & aws --endpoint-url=$Endpoint --region $Region lambda create-function --function-name $FunctionName --runtime $Runtime --handler $handlerEntryPoint --zip-file "fileb://$zipPath" --role $Role 2>&1
+    $createOutput = & aws --endpoint-url=$Endpoint --region $Region lambda create-function --function-name $FunctionName --runtime $Runtime --handler $handlerEntryPoint --zip-file "fileb://$zipPath" --role $Role --timeout 60 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Host "ERROR: create-function failed (exit $LASTEXITCODE):" -ForegroundColor Red
         Write-Host "  $($createOutput | Out-String)" -ForegroundColor Red
@@ -108,7 +109,16 @@ if ($existsExitCode -eq 0) {
     Write-Host "  OK: function created." -ForegroundColor Green
 }
 
-Start-Sleep -Seconds 1  # give LocalStack a moment to finish registering before invoking
+# Wait for function to be Active before invoking
+for ($attempt = 1; $attempt -le 10; $attempt++) {
+    $cfg = & aws --endpoint-url=$Endpoint --region $Region lambda get-function-configuration --function-name $FunctionName 2>&1
+    $cfgJson = $null
+    try { $cfgJson = ($cfg | Out-String) | ConvertFrom-Json } catch {}
+    if ($cfgJson -and $cfgJson.State -eq "Active") {
+        break
+    }
+    Start-Sleep -Seconds 1
+}
 
 # --- Test helper: checks exit code AND FunctionError, doesn't trust a clean exit code alone ---
 
