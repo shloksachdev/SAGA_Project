@@ -52,6 +52,8 @@ def emit(
             item["actor"] = actor
         if path:
             item["path"] = path
+        if "epoch" in detail:
+            item["epoch"] = detail["epoch"]
 
         dynamodb = boto3.resource(
             "dynamodb",

@@ -43,6 +43,11 @@ def execute_step(
     with metered_invocation(envelope.sagaId, actor=step_name, path=envelope.path):
         is_forward = action in (step_cfg.forwardAction, "forward", "create", "charge", "reserve", "notify")
         is_compensate = action in (step_cfg.compensateAction, "compensate", "cancel", "refund", "release", "unnotify")
+        is_elect = action in ("elect", "participate", "election")
+
+        if is_elect:
+            from common.election import participate
+            return participate(envelope, step_name)
 
         if is_forward:
             # 1. Idempotent forward start
@@ -146,12 +151,16 @@ def execute_step(
 
                     # Path D failure triggers election via CompensationNeeded
                     if envelope.path == "D":
-                        detail["failedStep"] = step_name
+                        elect_detail = dict(detail)
+                        elect_detail["action"] = "elect"
+                        elect_detail["failedStep"] = step_name
+                        from common.contracts import COMP_NEEDED_PUBLISHED
+                        emit(envelope.sagaId, COMP_NEEDED_PUBLISHED, actor=step_name, path=envelope.path)
                         publish_event(
                             bus_name="saga-bus-d",
                             source=f"saga.{step_name.lower()}",
                             detail_type="CompensationNeeded",
-                            detail=detail,
+                            detail=elect_detail,
                             saga_id=envelope.sagaId,
                         )
 

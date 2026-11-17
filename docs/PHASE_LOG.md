@@ -555,3 +555,73 @@ Re-verification: 8 / 8 direct invoke tests passed
 All 4 Lambdas deployed successfully and all tests passed.
 Exit code: 0
 ```
+
+
+## Phase 4: Path D Part 1 (Leader Election & Heartbeat)
+
+### Goal
+First-responder lease acquisition, heartbeating, watcher takeover, and deterministic election (D4, D5, D7, D8, D14).
+
+### Completed Tasks
+1. `common/lease.py`:
+   - Lease record schema on DynamoDB `SagaLeases`: `sagaId` (PK), `ownerId`, `epoch`, `leaseExpiresAt`, `status` (`ACTIVE`, `DONE`), `acquiredAt`, `lastRenewedAt`.
+   - `try_acquire(saga_id, owner_id, ttl_ms)`: Conditional write on `attribute_not_exists(sagaId) OR (leaseExpiresAt < :now AND #st <> :done)`. Emits `LEASE_ACQUIRED` (first acquire) or `LEASE_TAKEOVER` (takeover).
+   - `renew(lease)`: Conditional update enforcing `ownerId == :owner AND epoch == :epoch AND #st = :active`. Emits `LEASE_RENEWED`.
+   - `release_done(lease)`: Sets `status = DONE`. Non-reacquirable.
+   - Enforced D5: Zero static workload or service references.
+2. `common/election.py`:
+   - `participate(envelope, step_name, runner_fn)`: Checks eligibility in `SagaSteps`. Only services whose step is `COMPLETED` or `FAILED` are eligible; non-participants ignore election.
+   - If `try_acquire` succeeds, launches a background heartbeating thread renewing every `LEASE_RENEW_INTERVAL_MS` (default 500 ms) and invokes the compensation runner.
+   - If `try_acquire` fails (loser), enters the watcher loop (D7): sleeps `leaseExpiresAt - now + random(0, WATCH_JITTER_MS)`, checks `SagaRuns` status (terminating if `COMPENSATED` / `COMPLETED`), or attempts takeover.
+   - `default_trivial_runner`: Injects `leaderFault="crash_after:K"` on epoch 1, aborting before release to test watcher takeover.
+3. EventBridge Fan-in Rule on `saga-bus-d` (`paths/d/provision.py`):
+   - Created forward rules for Path D and `path-d-election` rule matching `source: ["saga.path_d"]`, `detail-type: ["CompensationNeeded"]`.
+   - Targets all 4 services (`Order`, `Payment`, `Inventory`, `Notification`) using `InputTransformer` injecting `action="elect"`.
+   - Wired into `infra/provision.py`.
+4. Handlers Routing:
+   - Handlers inspect `event.get("action") == "elect"` and delegate to `participate(envelope, step_name)`.
+   - On forward business failure, handlers emit `COMP_NEEDED_PUBLISHED` and publish `CompensationNeeded` to `saga-bus-d`.
+5. Acceptance Test Suite (`tests/phase4/test_election.py`):
+   - Verified 5/5 acceptance scenarios matching SPEC.md Phase 4 criteria.
+
+---
+
+### Evidence
+
+#### 1. `pytest tests/phase4 -q` Output
+
+```text
+.....                                                                    [100%]
+5 passed, 1 warning in 119.65s (0:01:59)
+Exit code: 0
+```
+
+Verified scenarios:
+- **First-responder election** (`test_first_responder_wins` & `test_end_to_end_election_with_forced_failure`): Forced failure produces exactly one `LEASE_ACQUIRED` among participants; losers log `LEASE_LOST` and become watchers; run completes `COMPENSATED`.
+- **Ineligibility** (`test_ineligible_service_ignores_election`): Service whose step never ran does not participate in election (`status is None`).
+- **Heartbeat & Renewal** (`test_lease_renewal_during_compensation`): Leader renews lease; `SagaLeases.epoch` retained / updated; `leaseExpiresAt` advances; `LEASE_RENEWED` recorded in trace.
+- **Leader Crash & Takeover** (`test_leader_crash_and_takeover`): Leader injected with `leaderFault="crash_after:1"` aborts; watcher detects expiry after `leaseExpiresAt`; watcher acquires with `LEASE_TAKEOVER` and `epoch = 2`; compensation completes to `COMPENSATED`.
+- **Determinism under competition & non-reacquisition** (`test_lease_expiry_and_takeover` & `test_lease_done_cannot_be_reacquired`): Competing acquisitions fail with conditional check; `DONE` lease cannot be reacquired.
+
+#### 2. `.\test.ps1` Regression Run
+
+```text
+=== Re-verifying all 4 Lambda functions directly ===
+-- Order --
+  [PASS] create: {"orderId": "order-123", "status": "ORDER_CREATED"}
+  [PASS] cancel: {"orderId": "order-123", "status": "ORDER_CANCELLED"}
+-- Payment --
+  [PASS] charge: {"orderId": "order-123", "status": "PAYMENT_COMPLETED"}
+  [PASS] compensate: {"orderId": "order-123", "status": "PAYMENT_COMPENSATED"}
+-- Inventory --
+  [PASS] reserve: {"orderId": "order-123", "status": "INVENTORY_RESERVED"}
+  [PASS] release: {"orderId": "order-123", "status": "INVENTORY_RELEASED"}
+-- Notification --
+  [PASS] notify: {"orderId": "order-123", "status": "NOTIFICATION_SENT"}
+  [PASS] unnotify: {"orderId": "order-123", "status": "NOTIFICATION_RETRACTED"}
+
+=== Summary ===
+Re-verification: 8 / 8 direct invoke tests passed
+All 4 Lambdas deployed successfully and all tests passed.
+Exit code: 0
+```

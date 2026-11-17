@@ -148,6 +148,14 @@ def provision():
     except Exception as e:
         print(f"  Path B deployment note: {e}")
 
+    # 9. Path D EventBridge Rules
+    print("[provision] Deploying Path D EventBridge rules...")
+    try:
+        from paths.d.provision import deploy as deploy_path_d
+        deploy_path_d()
+    except Exception as e:
+        print(f"  Path D deployment note: {e}")
+
     print("[provision] Provisioning complete and verified.")
     return 0
 
