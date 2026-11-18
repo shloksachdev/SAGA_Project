@@ -3,19 +3,19 @@
   "paths": ["A", "B", "C", "D"],
   "workloads": ["order", "trainticket", "wide-4"],
   "workScale": 1.0,
-  "repetitions": 20,
-  "warmupCount": 10,
+  "repetitions": 10,
+  "warmupCount": 1,
   "seed": 1337,
   "scenarios": [
     {
       "name": "happy",
-      "count": 40,
+      "count": 5,
       "faults": {}
     },
     {
       "name": "notification_failure",
       "workloads": ["order", "trainticket"],
-      "count": 20,
+      "count": 10,
       "faults": {
         "Notification": {
           "forward": "fail"
@@ -25,7 +25,7 @@
     {
       "name": "step4_failure",
       "workloads": ["wide-4"],
-      "count": 20,
+      "count": 10,
       "faults": {
         "Step4": {
           "forward": "fail"
@@ -35,7 +35,7 @@
     {
       "name": "payment_failure",
       "workloads": ["order"],
-      "count": 20,
+      "count": 10,
       "faults": {
         "Payment": {
           "forward": "fail",
@@ -46,7 +46,7 @@
     {
       "name": "inventory_failure",
       "workloads": ["order"],
-      "count": 20,
+      "count": 5,
       "faults": {
         "Inventory": {
           "forward": "fail",
@@ -59,7 +59,7 @@
       "workloads": ["wide-4"],
       "paths": ["D"],
       "compMode": "lifo",
-      "count": 20,
+      "count": 10,
       "faults": {
         "Step4": {
           "forward": "fail"
@@ -71,7 +71,7 @@
       "workloads": ["order"],
       "paths": ["D"],
       "compMode": "lifo",
-      "count": 20,
+      "count": 10,
       "faults": {
         "Notification": {
           "forward": "fail"
@@ -83,7 +83,7 @@
       "workloads": ["order"],
       "paths": ["D"],
       "compMode": "lifo",
-      "count": 20,
+      "count": 10,
       "faults": {
         "Payment": {
           "forward": "fail",
@@ -94,7 +94,8 @@
     {
       "name": "transient_comp_failure",
       "workloads": ["order"],
-      "count": 10,
+      "paths": ["D"],
+      "count": 5,
       "faults": {
         "Payment": {
           "compFailFirstN": 1
@@ -105,7 +106,7 @@
       "name": "leader_crash",
       "workloads": ["order"],
       "paths": ["D"],
-      "count": 10,
+      "count": 5,
       "leaderFault": "crash_after:1",
       "faults": {
         "Notification": {
