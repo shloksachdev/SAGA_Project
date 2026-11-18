@@ -41,9 +41,10 @@ def parse_event(event: Any) -> Tuple[SagaEnvelope, str]:
         # If detail has envelope fields, merge detail into data
         data = detail_data
 
-    # Check if wrapped in envelope key (e.g. from Step Functions task parameters)
-    if "envelope" in data and isinstance(data["envelope"], dict):
-        env_dict = dict(data["envelope"])
+    # Check if wrapped in saga or envelope key (e.g. from Step Functions or Path D orchestrator)
+    env_obj = data.get("saga") or data.get("envelope")
+    if env_obj and isinstance(env_obj, dict):
+        env_dict = dict(env_obj)
         if "action" in data:
             env_dict["action"] = data["action"]
         data = env_dict

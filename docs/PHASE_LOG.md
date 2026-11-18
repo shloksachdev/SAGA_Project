@@ -625,3 +625,105 @@ Re-verification: 8 / 8 direct invoke tests passed
 All 4 Lambdas deployed successfully and all tests passed.
 Exit code: 0
 ```
+
+
+## Phase 5: Path D Part 2 (Dynamic DAG Compensation Scheduler & LIFO Ablation)
+
+### Goal
+Dynamic DAG building from self-declared dependencies, parallel execution, LIFO controlled ablation, and zero static workload references (D5, D7, D8, D14).
+
+### Completed Tasks
+1. `common/core/dag.py` (pure Python, no boto3):
+   - `build_compensation_graph(step_records, failed_step)` builds dependency graph dynamically:
+     - Includes steps with status `COMPLETED` or `COMPENSATING`, plus failed step only if `compensateOnFailure` is True.
+     - Resolves dependencies from `compensateAfter`, resolving `"*"` to all other active nodes.
+     - Dependencies on steps already `COMPENSATED` or uninvoked are treated as satisfied.
+     - Detects cycles and raises `CyclicDependency`.
+     - Provides `layers()` and `ready(done_set)`.
+2. `common/core/scheduler.py` (pure Python, no boto3):
+   - `run_parallel(graph, exec_fn, max_workers=8)`:
+     - Dispatches ready nodes concurrently, releasing dependents as nodes complete.
+     - Retries transient failures up to `COMP_MAX_ATTEMPTS` with `COMP_INTERVAL_MS` delay.
+     - On retry exhaustion, marks node failed, blocks its dependents, and completes independent branches.
+   - `run_lifo(graph, exec_fn)`:
+     - Sequential ablation executing in descending `seq` order (ignoring `compensateAfter`).
+   - `VirtualClock`: Discrete-event virtual time clock enabling exact makespan property verification without wall-clock latency.
+3. `common/orchestrator.py` (adapter):
+   - `orchestrate_compensation(leader_ctx, envelope)`:
+     - Queries `SagaSteps` dynamically to construct the DAG without any static workload references (D5).
+     - Emits `COMP_DISPATCHED` before synchronous `lambda.invoke`.
+     - Supports `leaderFault="crash_after:K"`, allowing initial leader to crash and watcher to takeover and resume compensation.
+     - Transitions `SagaRuns` to `COMPENSATED` and calls `release_done`.
+4. Integration & Routing:
+   - Handlers delegate `action="elect"` to `orchestrate_compensation`.
+   - Updated `common/events.py` to transparently unwrap `saga` payload wrapper.
+5. Enforcement test of D5 (`tests/phase5/test_no_static_refs.py`):
+   - Statically verifies via AST that `common/election.py`, `common/lease.py`, `common/orchestrator.py`, and `common/core/*` contain zero imports or references to workloads or hard-coded service names.
+
+---
+
+### Evidence
+
+#### 1. `pytest tests/phase5 -q` Output
+
+```text
+....................                                                     [100%]
+20 passed, 1 warning in 84.16s (0:01:24)
+Exit code: 0
+```
+
+Verified scenarios:
+- **Unit tests with Virtual Time** (`tests/phase5/test_dag_scheduler.py`):
+  - `test_chain_dag`: Makespan strictly equals sum of durations (100.0s).
+  - `test_diamond_dag`: Makespan strictly equals 10 + max(20, 35) + 15 = 60.0s.
+  - `test_star_with_wildcard`: `*` dependency waits for all other nodes; makespan equals max(A, B, C) + D = 75.0s.
+  - `test_all_independent`: Makespan equals maximum node duration (45.0s).
+  - `test_wide_fan`: Wide fan concurrency verified (55.0s).
+  - `test_cycle_detection`: Cyclic dependency graph raises `CyclicDependency`.
+  - `test_transient_failure_with_retry`: Fails attempt 1, retries after interval, succeeds on attempt 2.
+  - `test_permanent_failure_blocks_dependents_not_siblings`: Fails all attempts on node; blocks its dependents while sibling branch finishes; returns `COMPENSATION_FAILED`.
+  - `test_resume_with_already_compensated_steps`: Resumes with already COMPENSATED steps skipped and treated as satisfied.
+  - `test_lifo_ablation_sequential`: Sequential LIFO execution in descending `seq` order (sum of durations).
+- **Integration Tests** (`tests/phase5/test_integration.py`):
+  - `test_parallel_dag_compensation_overlap`: Forced failure at Notification; Payment and Inventory compensation intervals overlap (`pay_start < inv_end and inv_start < pay_end`); Order starts after both complete; `compApplied == 1` for all 3 steps.
+  - `test_lifo_ablation_no_overlap`: LIFO mode does NOT overlap (sequential execution in descending `seq` order).
+  - `test_duplicate_compensation_needed_event`: Duplicate event delivery produces single compensation effect (`compApplied == 1`).
+  - `test_leader_crash_after_one_dispatch`: Initial leader crashes after 1 dispatch; watcher takes over (`LEASE_TAKEOVER`, epoch 2) and finishes compensation; `compApplied == 1` for all steps.
+- **Static Reference Enforcement** (`tests/phase5/test_no_static_refs.py`):
+  - 6 files analyzed via AST; 0 violations found for all banned service names and workload imports.
+
+#### 2. `.\test.ps1` Direct Invocation Regression Run
+
+```text
+=== Re-verifying all 4 Lambda functions directly ===
+-- Order --
+  [PASS] create: {"orderId": "order-123", "status": "ORDER_CREATED"}
+  [PASS] cancel: {"orderId": "order-123", "status": "ORDER_CANCELLED"}
+-- Payment --
+  [PASS] charge: {"orderId": "order-123", "status": "PAYMENT_COMPLETED"}
+  [PASS] compensate: {"orderId": "order-123", "status": "PAYMENT_COMPENSATED"}
+-- Inventory --
+  [PASS] reserve: {"orderId": "order-123", "status": "INVENTORY_RESERVED"}
+  [PASS] release: {"orderId": "order-123", "status": "INVENTORY_RELEASED"}
+-- Notification --
+  [PASS] notify: {"orderId": "order-123", "status": "NOTIFICATION_SENT"}
+  [PASS] unnotify: {"orderId": "order-123", "status": "NOTIFICATION_RETRACTED"}
+
+=== Summary ===
+Re-verification: 8 / 8 direct invoke tests passed
+All 4 Lambdas deployed successfully and all tests passed.
+Exit code: 0
+```
+
+
+#### 3. Full Regression Run (`pytest tests/phase1 tests/phase2 tests/phase3 tests/phase4 tests/phase5 -v`)
+
+```text
+================== 43 passed, 1 warning in 780.18s (0:13:00) ==================
+Exit code: 0
+```
+- Phase 1 Foundation: 6 / 6 passed
+- Phase 2 Path A (Orchestration): 6 / 6 passed
+- Phase 3 Path B (Choreography): 6 / 6 passed
+- Phase 4 Path D Part 1 (Leader Election): 5 / 5 passed
+- Phase 5 Path D Part 2 (DAG & LIFO Ablation): 20 / 20 passed

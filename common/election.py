@@ -84,6 +84,11 @@ def default_trivial_runner(leader_ctx: LeaderContext, envelope: SagaEnvelope) ->
     emit(envelope.sagaId, SAGA_COMPENSATED, actor=leader_ctx.lease.owner_id, path=envelope.path)
 
 
+def default_orchestrator_runner(leader_ctx: LeaderContext, envelope: SagaEnvelope) -> None:
+    from common.orchestrator import orchestrate_compensation
+    orchestrate_compensation(leader_ctx, envelope)
+
+
 def _run_leader(
     lease: Lease,
     envelope: SagaEnvelope,
@@ -94,7 +99,7 @@ def _run_leader(
     leader_ctx = LeaderContext(lease=lease, stop_event=stop_event)
     _start_heartbeat(lease, stop_event)
 
-    runner = runner_fn or default_trivial_runner
+    runner = runner_fn or default_orchestrator_runner
     try:
         runner(leader_ctx, envelope)
     finally:

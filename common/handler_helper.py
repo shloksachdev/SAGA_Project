@@ -46,8 +46,9 @@ def execute_step(
         is_elect = action in ("elect", "participate", "election")
 
         if is_elect:
+            from common.orchestrator import orchestrate_compensation
             from common.election import participate
-            return participate(envelope, step_name)
+            return participate(envelope, step_name, runner_fn=orchestrate_compensation)
 
         if is_forward:
             # 1. Idempotent forward start
@@ -224,7 +225,7 @@ def execute_step(
                         time.sleep(COMP_INTERVAL_MS / 1000.0)
 
             if last_err is not None:
-                if envelope.path in ("B", "D") or (envelope.path == "C" and step_name == "Notification"):
+                if envelope.path == "B" or (envelope.path == "C" and step_name == "Notification"):
                     from common.contracts import SAGA_COMPENSATION_FAILED
                     emit(
                         envelope.sagaId,
