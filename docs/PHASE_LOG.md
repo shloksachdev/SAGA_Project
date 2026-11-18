@@ -727,3 +727,109 @@ Exit code: 0
 - Phase 3 Path B (Choreography): 6 / 6 passed
 - Phase 4 Path D Part 1 (Leader Election): 5 / 5 passed
 - Phase 5 Path D Part 2 (DAG & LIFO Ablation): 20 / 20 passed
+
+---
+
+## Phase 6: Path C (Static Hybrid Baseline)
+
+### Goal
+A static hybrid architecture combining an orchestrated core (Order → Payment → Inventory in Step Functions with sequential reverse compensation) and a choreographed edge (Notification via EventBridge on `saga-bus-c` with SQS Dead Letter Queue fallback on failure).
+
+### Completed Tasks
+1. `paths/c/build_asl.py`:
+   - Programmatically builds ASL state machine definition for `saga-path-c`.
+   - Core forward chain: `Order -> Payment -> Inventory -> PublishOrderCoreCompleted`.
+   - Reverse sequential compensation catches:
+     - Payment failure compensates `Order` (cancel).
+     - Inventory failure compensates `Payment` (refund) then `Order` (cancel).
+   - Publishes `OrderCoreCompleted` event directly via Step Functions optimized `arn:aws:states:::events:putEvents` to `saga-bus-c` with `Detail.$: "$"`.
+2. `paths/c/deploy.py`:
+   - Deploys or updates the `saga-path-c` Step Functions state machine idempotently.
+3. `paths/c/provision.py`:
+   - Provisions SQS dead-letter queue `saga-c-notification-dlq`.
+   - Deploys `saga-path-c` state machine.
+   - Creates EventBridge rule `path-c-edge-notification` on `saga-bus-c` matching source `saga.path_c.core` and detail-type `OrderCoreCompleted`, targeting the `Notification` Lambda with `InputPath: "$.detail"`.
+   - Integrated into root `infra/provision.py`.
+4. `common/handler_helper.py`:
+   - Implemented Spike S7 DLQ fallback for Path C edge failure in Notification handler:
+   - On forward retry exhaustion, directly forwards the failed payload to `saga-c-notification-dlq`.
+   - Emits `NOTIFICATION_DLQ` event to `SagaTrace`.
+   - Transitions `SagaRuns` status to `COMPLETED` with trace attribute `edgeFailure=True`, leaving the orchestrated core intact and uncompensated.
+5. `paths/c/run.py`:
+   - Initializes `SagaRuns` record, emits `SAGA_STARTED`, and starts execution on `saga-path-c`.
+   - Polls execution until terminal state (`COMPLETED` or `COMPENSATED`), returning result dictionary with trace events.
+6. `tests/phase6/test_path_c.py`:
+   - Acceptance test suite testing all 4 hybrid scenarios.
+
+---
+
+### Evidence
+
+#### 1. `pytest tests/phase6 -v` Output
+
+```text
+============================= test session starts =============================
+platform win32 -- Python 3.12.2, pytest-9.0.2, pluggy-1.6.0 -- C:\Users\shlok\AppData\Local\Programs\Python\Python312\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\shlok\OneDrive\Desktop\Projects\SAGA_Project
+configfile: pytest.ini
+plugins: anyio-4.9.0, hydra-core-1.3.2, langsmith-0.7.6, asyncio-1.4.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 4 items
+
+tests/phase6/test_path_c.py::test_happy_path_hybrid PASSED               [ 25%]
+tests/phase6/test_path_c.py::test_failure_at_payment PASSED              [ 50%]
+tests/phase6/test_path_c.py::test_failure_at_inventory PASSED            [ 75%]
+tests/phase6/test_path_c.py::test_notification_forced_to_fail PASSED     [100%]
+
+=================== 4 passed, 1 warning in 96.30s (0:01:36) ===================
+Exit code: 0
+```
+
+Verified scenarios:
+- `test_happy_path_hybrid`: Core steps (Order, Payment, Inventory) execute sequentially via Step Functions; `OrderCoreCompleted` is published to `saga-bus-c`; edge Notification is invoked via EventBridge; run reaches `COMPLETED`; `SAGA_COMPLETED` emitted.
+- `test_failure_at_payment`: Payment fails; Payment Catch invokes compensation for Order; state machine transitions to `COMPENSATED`; Notification is never invoked.
+- `test_failure_at_inventory`: Inventory fails; Inventory Catch compensates Payment then Order; state machine transitions to `COMPENSATED`; Notification is never invoked.
+- `test_notification_forced_to_fail`: Core completes; Notification receives `OrderCoreCompleted` on `saga-bus-c` and fails; message is routed to `saga-c-notification-dlq`; `NOTIFICATION_DLQ` emitted; run status marked `COMPLETED` with `edgeFailure=True`; core steps remain `COMPLETED` (uncompensated).
+
+#### 2. `.\test.ps1` Direct Invocation Regression Run
+
+```text
+=== Re-verifying all 4 Lambda functions directly ===
+
+-- Order --
+  [PASS] create: {"orderId": "order-123", "status": "ORDER_CREATED"}
+  [PASS] cancel: {"orderId": "order-123", "status": "ORDER_CANCELLED"}
+
+-- Payment --
+  [PASS] charge: {"orderId": "order-123", "status": "PAYMENT_COMPLETED"}
+  [PASS] compensate: {"orderId": "order-123", "status": "PAYMENT_COMPENSATED"}
+
+-- Inventory --
+  [PASS] reserve: {"orderId": "order-123", "status": "INVENTORY_RESERVED"}
+  [PASS] release: {"orderId": "order-123", "status": "INVENTORY_RELEASED"}
+
+-- Notification --
+  [PASS] notify: {"orderId": "order-123", "status": "NOTIFICATION_SENT"}
+  [PASS] unnotify: {"orderId": "order-123", "status": "NOTIFICATION_RETRACTED"}
+
+=== Summary ===
+Re-verification: 8 / 8 direct invoke tests passed
+All 4 Lambdas deployed successfully and all tests passed.
+Exit code: 0
+```
+
+#### 3. Full Regression Run (`pytest tests/phase1 tests/phase2 tests/phase3 tests/phase4 tests/phase5 tests/phase6 -q`)
+
+```text
+...............................................                          [100%]
+47 passed, 1 warning in 1080.85s (0:18:00)
+Exit code: 0
+```
+- Phase 1 Foundation: 6 / 6 passed
+- Phase 2 Path A (Orchestration): 6 / 6 passed
+- Phase 3 Path B (Choreography): 6 / 6 passed
+- Phase 4 Path D Part 1 (Leader Election): 5 / 5 passed
+- Phase 5 Path D Part 2 (DAG & LIFO Ablation): 20 / 20 passed
+- Phase 6 Path C (Static Hybrid Baseline): 4 / 4 passed
+

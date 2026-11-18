@@ -148,7 +148,15 @@ def provision():
     except Exception as e:
         print(f"  Path B deployment note: {e}")
 
-    # 9. Path D EventBridge Rules
+    # 9. Path C (State Machine & Edge Rule)
+    print("[provision] Deploying Path C core and edge...")
+    try:
+        from paths.c.provision import provision as provision_path_c
+        provision_path_c()
+    except Exception as e:
+        print(f"  Path C deployment note: {e}")
+
+    # 10. Path D EventBridge Rules
     print("[provision] Deploying Path D EventBridge rules...")
     try:
         from paths.d.provision import deploy as deploy_path_d

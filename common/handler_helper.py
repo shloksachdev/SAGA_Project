@@ -20,6 +20,28 @@ from common.workloads import get_workload
 from common.aws import get_table
 
 
+def _send_to_dlq(envelope, error):
+    try:
+        from common.aws import get_boto3_client
+        import json
+        sqs = get_boto3_client("sqs")
+        queue_url = sqs.get_queue_url(QueueName="saga-c-notification-dlq")["QueueUrl"]
+        msg_body = {
+            "sagaId": envelope.sagaId,
+            "path": envelope.path,
+            "step": "Notification",
+            "error": str(error),
+            "envelope": envelope.to_dict(),
+        }
+        sqs.send_message(
+            QueueUrl=queue_url,
+            MessageBody=json.dumps(msg_body),
+        )
+    except Exception as ex:
+        import logging
+        logging.getLogger(__name__).warning(f"Failed sending to DLQ: {ex}")
+
+
 def execute_step(
     event: Any,
     context: Any,
@@ -117,6 +139,38 @@ def execute_step(
                     envelope.path == "C" and step_name == "Notification"
                 )
                 if is_event_driven:
+                    # Path C Notification edge failure: send to SQS DLQ, record NOTIFICATION_DLQ, do NOT rollback core (Spike S7)
+                    if envelope.path == "C" and step_name == "Notification":
+                        _send_to_dlq(envelope, e)
+                        from common.contracts import NOTIFICATION_DLQ
+                        emit(
+                            envelope.sagaId,
+                            NOTIFICATION_DLQ,
+                            actor=step_name,
+                            path=envelope.path,
+                            error=str(e),
+                            edgeFailure=True,
+                        )
+                        try:
+                            runs_table = get_table("SagaRuns")
+                            runs_table.update_item(
+                                Key={"sagaId": envelope.sagaId},
+                                UpdateExpression="SET #st = :comp, edgeFailure = :ef, completedAt = :ts",
+                                ExpressionAttributeNames={"#st": "status"},
+                                ExpressionAttributeValues={
+                                    ":comp": STATUS_COMPLETED,
+                                    ":ef": True,
+                                    ":ts": now_ms(),
+                                },
+                            )
+                        except Exception:
+                            pass
+                        return {
+                            "orderId": order_id,
+                            "status": "NOTIFICATION_FAILED",
+                            "error": str(e),
+                        }
+
                     bus_name = get_bus_for_path(envelope.path)
                     detail = envelope.to_dict()
                     detail["action"] = "compensate"
