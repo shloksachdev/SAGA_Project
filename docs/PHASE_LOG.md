@@ -1156,3 +1156,105 @@ Re-verification: 8 / 8 direct invoke tests passed
 All 4 Lambdas deployed successfully and all tests passed.
 Exit code: 0
 ```
+
+
+---
+
+## Phase 9: SimPy Discrete-Event Simulator
+
+### Goal
+Characterize distributed saga election and compensation scheduling dynamics beyond what LocalStack can show, evaluating high participant concurrency, arbitrary DAG topologies, leader crash failovers, and service pool contention.
+
+### Completed Tasks
+1. **DAG Generators (`sim/dags.py`)**:
+   - Implemented `chain`, `independent`, `wide_fan`, `diamond`, and `layered_random` DAG generators.
+   - Implemented real workload topologies: `order_workload`, `trainticket_workload`, and `wide_workload(k)`.
+   - Reused `common/core/dag.py` for canonical dependency and topological layer semantics.
+2. **Discrete-Event Simulation Engine (`sim/model.py`)**:
+   - Implemented SimPy processes for $N$ participants racing conditional-write DynamoDB lease (`SagaLeases`).
+   - Implemented arrival latency distributions: `constant`, `lognormal`, and `heavy_tailed` (Pareto).
+   - Implemented lease TTL and periodic heartbeating.
+   - Implemented leader crash injection probability $p$ mid-rollback, lease expiration, and watcher takeover.
+   - Implemented dynamic DAG parallel scheduling and sequential LIFO ablation.
+   - Implemented shared service resource pool contention under Poisson saga arrival rate $\lambda$.
+3. **Parameter Sweep Runner (`sim/run.py`)**:
+   - CLI command `python sim/run.py --sweep default --seed S`.
+   - Sweeps participant counts (2–16), DAG width (1–8), depth (1–6), crash probability ($0 \le p \le 0.25$), and arrival rates $\lambda \in [1, 20]$.
+   - Emits structured CSVs in `results/sim/` (`election_sweep.csv`, `makespan_sweep.csv`, `crash_sweep.csv`, `contention_sweep.csv`).
+4. **Calibration Report (`results/sim/calibration.md`)**:
+   - Calibrated against empirical LocalStack `order` timings (DynamoDB lease overhead ~65 ms, Payment comp ~255 ms, Inventory comp ~250 ms, Order comp ~260 ms).
+   - Produced predicted median of 564.6 ms versus measured median of 580.0 ms (predicted-to-measured ratio of 0.973, agreement within 2.7%).
+5. **Plotting Pipeline (`sim/plots.py`)**:
+   - Emits publication-quality `.png` and `.pdf` figures in `results/sim/plots/` for election overhead, makespan reduction, re-elections vs crash probability, and contention scaling.
+6. **Acceptance Test Suite (`tests/phase9/`)**:
+   - 11 unit and acceptance tests covering DAG layer invariants, determinism (identical SHA-256 CSV hashes with same seed), Property 1 (chain DAG equivalence), Property 2 (independent DAG speedup), crash recovery, and runtime.
+
+---
+
+### Evidence
+
+#### 1. Phase 9 Acceptance Tests (`pytest tests/phase9/ -v`)
+
+```text
+tests/phase9/test_crash_recovery.py::test_leader_crash_and_watcher_takeover PASSED [  9%]
+tests/phase9/test_dags.py::test_chain_dag PASSED                         [ 18%]
+tests/phase9/test_dags.py::test_independent_dag PASSED                   [ 27%]
+tests/phase9/test_dags.py::test_wide_fan_dag PASSED                      [ 36%]
+tests/phase9/test_dags.py::test_diamond_dag PASSED                       [ 45%]
+tests/phase9/test_dags.py::test_layered_random_dag PASSED                [ 54%]
+tests/phase9/test_dags.py::test_workload_shapes PASSED                   [ 63%]
+tests/phase9/test_determinism.py::test_simulation_determinism PASSED     [ 72%]
+tests/phase9/test_properties.py::test_property_1_chain_equivalence PASSED [ 81%]
+tests/phase9/test_properties.py::test_property_2_independent_speedup PASSED [ 90%]
+tests/phase9/test_runtime.py::test_sweep_runtime_under_ten_minutes PASSED [100%]
+
+======================== 11 passed, 1 warning in 2.66s ========================
+```
+
+#### 2. Simulation Sweep Execution (`python sim/run.py --sweep default --seed 42`)
+
+```text
+[sim/run] Starting 'default' sweep with seed=42 -> results/sim
+  [OK] Election sweep: results/sim\election_sweep.csv
+  [OK] Makespan sweep: results/sim\makespan_sweep.csv
+  [OK] Crash sweep: results/sim\crash_sweep.csv
+  [OK] Contention sweep: results/sim\contention_sweep.csv
+  [OK] Calibration: results/sim\calibration.md
+  [OK] Plots generated in results/sim/plots/
+[sim/run] Sweep completed successfully in 3.08 seconds.
+```
+
+#### 3. Simulator Calibration Summary (`results/sim/calibration.md`)
+
+```text
+- LocalStack Measured Median Latency: 580.0 ms (from paper/numbers.json)
+- SimPy Predicted Median Latency: 564.6 ms
+- Predicted-to-Measured Ratio: 0.973 (agreement within 2.7%)
+```
+
+#### 4. Direct Invocation Regression (`.\test.ps1`)
+
+```text
+=== Re-verifying all 4 Lambda functions directly ===
+
+-- Order --
+  [PASS] create: {"orderId": "order-123", "status": "ORDER_CREATED"}
+  [PASS] cancel: {"orderId": "order-123", "status": "ORDER_CANCELLED"}
+
+-- Payment --
+  [PASS] charge: {"orderId": "order-123", "status": "PAYMENT_COMPLETED"}
+  [PASS] compensate: {"orderId": "order-123", "status": "PAYMENT_COMPENSATED"}
+
+-- Inventory --
+  [PASS] reserve: {"orderId": "order-123", "status": "INVENTORY_RESERVED"}
+  [PASS] release: {"orderId": "order-123", "status": "INVENTORY_RELEASED"}
+
+-- Notification --
+  [PASS] notify: {"orderId": "order-123", "status": "NOTIFICATION_SENT"}
+  [PASS] unnotify: {"orderId": "order-123", "status": "NOTIFICATION_RETRACTED"}
+
+=== Summary ===
+Re-verification: 8 / 8 direct invoke tests passed
+All 4 Lambdas deployed successfully and all tests passed.
+Exit code: 0
+```
