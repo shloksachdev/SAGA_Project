@@ -1,0 +1,44 @@
+{
+  "retrieval_date": "2026-11-18",
+  "currency": "USD",
+  "region": "us-east-1",
+  "services": {
+    "lambda": {
+      "request_per_million": 0.20,
+      "request_unit_price": 0.0000002,
+      "gb_second_unit_price": 0.0000166667,
+      "architecture": "x86",
+      "default_memory_mb": 128,
+      "source_url": "https://aws.amazon.com/lambda/pricing/",
+      "description": "AWS Lambda x86 compute: $0.20 per 1M requests, $0.0000166667 per GB-second"
+    },
+    "eventbridge": {
+      "event_per_million": 1.00,
+      "event_unit_price": 0.000001,
+      "source_url": "https://aws.amazon.com/eventbridge/pricing/",
+      "description": "Amazon EventBridge custom events: $1.00 per 1M events published (64KB chunks)"
+    },
+    "step_functions": {
+      "transition_per_thousand": 0.025,
+      "transition_unit_price": 0.000025,
+      "workflow_type": "standard",
+      "source_url": "https://aws.amazon.com/step-functions/pricing/",
+      "description": "AWS Step Functions Standard Workflows: $0.025 per 1,000 state transitions"
+    },
+    "dynamodb": {
+      "wru_per_million": 0.25,
+      "wru_unit_price": 0.00000025,
+      "rru_per_million": 0.05,
+      "rru_unit_price": 0.00000005,
+      "billing_mode": "on-demand",
+      "source_url": "https://aws.amazon.com/dynamodb/pricing/on-demand/",
+      "description": "Amazon DynamoDB On-Demand: $0.25 per 1M Write Request Units, $0.05 per 1M Read Request Units (Standard Table Class, late 2024 update)"
+    },
+    "sqs": {
+      "request_per_million": 0.40,
+      "request_unit_price": 0.0000004,
+      "source_url": "https://aws.amazon.com/sqs/pricing/",
+      "description": "Amazon SQS Standard Queues: $0.40 per 1M requests (64KB chunks)"
+    }
+  }
+}

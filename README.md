@@ -112,3 +112,44 @@ shared AWS environment.
 - Build Path D's election mechanism on `SagaLeases` and the compensation scheduler
 - Extend `setup.ps1`/`setup.sh` to also recreate whatever new resources Path A/B/D
   need, so the one-command rebuild keeps covering the full environment
+
+## Running Experiments
+
+All four distributed saga coordination strategies (Path A, B, C, D) can be benchmarked, profiled, and analyzed using the automated experiment harness.
+
+### 1. Smoke Run
+Runs a fast validation across all four paths (2 sagas per path per scenario, e-commerce order workload):
+```powershell
+python harness/run_experiment.py --config experiments/configs/smoke.json --runTag smoke-run
+```
+Output:
+- Raw execution traces: `results/raw/smoke-run.jsonl`
+- Tabular metrics summary: `results/summary.csv`
+
+### 2. Full Experiment Matrix
+Executes the comprehensive evaluation across workloads (`order`, `trainticket`, `wide-4`) with failure injection:
+```powershell
+python harness/run_experiment.py --config experiments/configs/full.json --runTag full-evaluation
+```
+
+### 3. Open-Loop Load Testing
+Profiles system throughput and happy-path latency (p50 / p95) under sustained arrival rates:
+```powershell
+python harness/load.py --path D --rate 2.0 --duration 10.0 --workload order
+```
+
+### 4. Architectural Coupling Report
+Prints static coupling metrics (ASL Lambda ARN references, EventBridge rules, and orchestrator static references):
+```powershell
+python harness/coupling.py
+```
+
+### 5. Analytical Cost Evaluation
+Evaluates analytical AWS cost per 1,000 transactions based on AWS list pricing:
+```powershell
+python harness/cost.py
+# Or evaluate from a completed raw run tag or file:
+python harness/cost.py --run smoke-run
+python harness/cost.py --file results/raw/smoke-run.jsonl
+```
+

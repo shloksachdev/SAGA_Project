@@ -9,7 +9,7 @@ volume/
 build/
 
 # Test and run results
-results/raw/
+results/
 .pytest_cache/
 
 # Stray test files from manual `aws lambda invoke` testing

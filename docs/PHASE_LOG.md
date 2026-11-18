@@ -934,3 +934,134 @@ Exit code: 0
 ```
 
 
+
+
+---
+
+## Phase 8: Fault-Injection Harness, Load Generator, Metrics Tooling
+
+### Goal
+Implement a reusable experiment harness that runs any path × workload × fault plan, interleaves runs across paths in randomized order, derives §3.5 metrics from `SagaTrace`, evaluates architectural coupling and analytical AWS list pricing costs, and validates distributed consistency invariants.
+
+### Completed Tasks
+1. `harness/pricing.json`:
+   - Documented late-2024 AWS list prices for Lambda, EventBridge, Step Functions Standard, DynamoDB On-Demand (updated rates), and SQS with retrieval dates and source URLs.
+2. `harness/cost.py`:
+   - Computes analytical cost per transaction and per 1,000 transactions from metered/derived resource units.
+   - Accepts `--run <runTag>` or `--file <path>` to evaluate actual empirical runs from `results/raw/` or prints the analytical baseline table.
+3. `harness/coupling.py`:
+   - Measures architectural coupling: ASL Lambda ARN bindings, EventBridge rules, and AST-based orchestrator static reference inspection (asserting strictly 0 for Path D per D5).
+4. `harness/derive.py`:
+   - Extracts all §3.5 metrics from `SagaTrace`: `happy_latency`, `compensation_latency`, `election_time`, `scheduling_makespan`, and resource unit counts.
+5. `harness/consistency.py`:
+   - Checks distributed consistency invariants on terminal saga runs (`compApplied <= 1`, no steps left `COMPLETED` on a compensated run, no steps stuck `COMPENSATING`).
+   - Supports negative tests on corrupted data.
+6. `harness/load.py`:
+   - Open-loop load generator profiling throughput and latency under sustained offered rates.
+7. `harness/run_experiment.py`:
+   - Orchestrates interleaved, randomized runs across paths with warm-up filtering, emitting raw JSONL to `results/raw/<runTag>.jsonl` and metrics to `results/summary.csv`.
+8. `README.md`:
+   - Added "Running Experiments" section documenting exact reproduction commands.
+9. `tests/phase8/test_harness.py`:
+   - Full acceptance test suite verifying derive on synthetic traces with known timestamps, invariant verification, corruption detection, coupling, and cost modeling.
+
+---
+
+### Evidence
+
+#### 1. Phase 8 Acceptance Tests (`pytest tests/phase8 -q`)
+
+```text
+......                                                                   [100%]
+============================== warnings summary ===============================
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\site-packages\dateutil\tz\tz.py:37
+  DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated
+
+6 passed, 1 warning in 4.59s
+```
+
+#### 2. Smoke Experiment Run (`python harness/run_experiment.py --config experiments/configs/smoke.json --runTag smoke-test`)
+
+```text
+[Experiment] Loaded config 'experiments/configs/smoke.json': 36 total runs planned under runTag 'smoke-test'
+[Experiment] Output JSONL: C:\Users\shlok\OneDrive\Desktop\Projects\SAGA_Project\results\raw\smoke-test.jsonl
+  [1/36] Running Path C (order, happy, warmup=False)...
+  [2/36] Running Path A (order, payment_failure, warmup=False)...
+  ...
+  [36/36] Running Path B (order, happy, warmup=False)...
+[Experiment] Completed 36 runs. Summary written to C:\Users\shlok\OneDrive\Desktop\Projects\SAGA_Project\results\summary.csv
+```
+
+Summary CSV output (`results/summary.csv`):
+```text
+path,workload,scenario,runs,consistent_pct,timeouts,median_happy_latency_ms,median_compensation_latency_ms,median_makespan_ms,avg_cost_usd,cost_per_1k_usd
+A,order,happy,2,100.0,0,4091,,,0.000154,0.1539
+A,order,inventory_failure,2,100.0,0,,829,,0.000155,0.1548
+A,order,notification_failure,2,100.0,0,,1206,,0.000206,0.2064
+A,order,payment_failure,2,100.0,0,,580,,0.000104,0.1038
+B,order,happy,2,100.0,0,5954,,,0.000009,0.0095
+B,order,inventory_failure,2,100.0,0,,654,,0.000012,0.0117
+B,order,notification_failure,2,100.0,0,,976,,0.000016,0.0159
+B,order,payment_failure,2,100.0,0,,466,,0.000008,0.0077
+C,order,happy,2,100.0,0,17646,,,0.000157,0.1574
+C,order,inventory_failure,2,100.0,0,,944,,0.000157,0.1568
+C,order,notification_failure,2,100.0,0,,,,0.000132,0.1319
+C,order,payment_failure,2,100.0,0,,378,,0.000104,0.1037
+D,order,happy,2,100.0,0,5906,,,0.000010,0.0100
+D,order,inventory_failure,2,100.0,0,,13173,12512,0.000057,0.0568
+D,order,notification_failure,2,100.0,0,,2343,1691,0.000022,0.0215
+D,order,payment_failure,2,100.0,0,,1800,1032,0.000012,0.0122
+```
+
+#### 3. Coupling Evaluation (`python harness/coupling.py`)
+
+```text
+Architectural Coupling Report (Workload: order):
+| Path | Architecture Type | ASL Lambda Refs | Forward EB Rules | Reverse/Comp EB Rules | Orchestrator Static Refs | Total Coupling Metric | Notes |
+|---|---|---|---|---|---|---|---|
+| **A** | Pure Orchestration | 4 | 0 | 0 | **N/A** | **4** | 4 distinct Lambda ARNs tightly bound in ASL |
+| **B** | Pure Choreography | 0 | 4 | 3 | **N/A** | **7** | 4 forward rules + 3 reverse compensation rules on saga-bus-b |
+| **C** | Static Hybrid | 3 | 1 | 0 | **N/A** | **4** | 3 core Lambda refs in ASL + 1 edge rule on saga-bus-c |
+| **D** | Dynamic Orchestration | 0 | 4 | 1 | **0** | **5** | 4 steady-state forward rules + 1 fan-in election rule; 0 orchestrator static service references (D5) |
+```
+
+#### 4. Cost Model Output (`python harness/cost.py --run smoke-test`)
+
+```text
+[Cost Model] Loaded AWS list pricing (retrieval date: 2026-11-18, region: us-east-1)
+
+Measured Cost Model from 'results/raw/smoke-test.jsonl':
+| Path | Invocations | Lambda Cost | EB Events | EB Cost | SFN Transitions | SFN Cost | DDB Ops (W/R) | DDB Cost | Total / Txn | Cost / 1k Txns |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **A** | 4.8 | $0.000003 | 0.0 | $0.000000 | 6.0 | $0.000150 | 5.0 / 1.0 | $0.000001 | $0.000155 | **$0.1547** |
+| **B** | 4.8 | $0.000004 | 5.8 | $0.000006 | 0.0 | $0.000000 | 5.0 / 1.0 | $0.000001 | $0.000011 | **$0.0112** |
+| **C** | 4.0 | $0.000003 | 1.8 | $0.000002 | 5.2 | $0.000131 | 4.25 / 1.0 | $0.000001 | $0.000137 | **$0.1375** |
+| **D** | 7.8 | $0.000019 | 5.0 | $0.000005 | 0.0 | $0.000000 | 5.0 / 3.0 | $0.000001 | $0.000025 | **$0.0251** |
+```
+
+#### 5. Direct Invoke Regression (`.\test.ps1`)
+
+```text
+=== Re-verifying all 4 Lambda functions directly ===
+
+-- Order --
+  [PASS] create: {"orderId": "order-123", "status": "ORDER_CREATED"}
+  [PASS] cancel: {"orderId": "order-123", "status": "ORDER_CANCELLED"}
+
+-- Payment --
+  [PASS] charge: {"orderId": "order-123", "status": "PAYMENT_COMPLETED"}
+  [PASS] compensate: {"orderId": "order-123", "status": "PAYMENT_COMPENSATED"}
+
+-- Inventory --
+  [PASS] reserve: {"orderId": "order-123", "status": "INVENTORY_RESERVED"}
+  [PASS] release: {"orderId": "order-123", "status": "INVENTORY_RELEASED"}
+
+-- Notification --
+  [PASS] notify: {"orderId": "order-123", "status": "NOTIFICATION_SENT"}
+  [PASS] unnotify: {"orderId": "order-123", "status": "NOTIFICATION_RETRACTED"}
+
+=== Summary ===
+Re-verification: 8 / 8 direct invoke tests passed
+All 4 Lambdas deployed successfully and all tests passed.
+Exit code: 0
+```
