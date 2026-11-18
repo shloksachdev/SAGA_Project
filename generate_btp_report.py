@@ -165,6 +165,19 @@ def generate_report():
         section.bottom_margin = Inches(1.0)
         section.left_margin = Inches(1.25)
         section.right_margin = Inches(1.0)
+        section.different_first_page_header_footer = True
+
+        # Center dynamic page numbering in footer
+        footer = section.footer
+        p_ft = footer.paragraphs[0]
+        p_ft.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_ft.paragraph_format.space_before = Pt(0)
+        p_ft.paragraph_format.space_after = Pt(0)
+        r_ft = p_ft.add_run()
+        format_run(r_ft, font_name="Times New Roman", size_pt=10, color_rgb=(120, 120, 120))
+        fldSimple = OxmlElement('w:fldSimple')
+        fldSimple.set(qn('w:instr'), 'PAGE')
+        r_ft._r.append(fldSimple)
 
     # =========================================================================
     # 1. TITLE PAGE
@@ -178,12 +191,11 @@ def generate_report():
     add_p(doc, "Computer Science and Engineering", align=WD_ALIGN_PARAGRAPH.CENTER, bold=True, font_size=13, space_after=14)
 
     add_p(doc, "by", align=WD_ALIGN_PARAGRAPH.CENTER, font_size=12, space_after=6)
-    add_p(doc, "Shlok (MIS: 112115123)", align=WD_ALIGN_PARAGRAPH.CENTER, bold=True, font_size=12, space_after=2)
-    add_p(doc, "[Group Member 2 Name (MIS: ________)]", align=WD_ALIGN_PARAGRAPH.CENTER, font_size=11, space_after=2)
-    add_p(doc, "[Group Member 3 Name (MIS: ________)]", align=WD_ALIGN_PARAGRAPH.CENTER, font_size=11, space_after=14)
+    add_p(doc, "Shlok", align=WD_ALIGN_PARAGRAPH.CENTER, bold=True, font_size=14, space_after=2)
+    add_p(doc, "(MIS No: 112115123)", align=WD_ALIGN_PARAGRAPH.CENTER, bold=True, font_size=12, space_after=20)
 
     add_p(doc, "Under the Supervision of:", align=WD_ALIGN_PARAGRAPH.CENTER, bold=True, font_size=12, space_after=2)
-    add_p(doc, "[Supervisor's Name]", align=WD_ALIGN_PARAGRAPH.CENTER, font_size=12, space_after=2)
+    add_p(doc, "[Project Supervisor]", align=WD_ALIGN_PARAGRAPH.CENTER, font_size=12, space_after=2)
     add_p(doc, "[Designation of Supervisor, Department of Computer Science & Engineering]", align=WD_ALIGN_PARAGRAPH.CENTER, italic=True, font_size=11, space_after=16)
 
     # Add Institute Logo
@@ -198,7 +210,7 @@ def generate_report():
     add_p(doc, "Department of Computer Science and Engineering", align=WD_ALIGN_PARAGRAPH.CENTER, bold=True, font_size=13, space_after=2)
     add_p(doc, "Indian Institute of Information Technology, Pune", align=WD_ALIGN_PARAGRAPH.CENTER, bold=True, font_size=14, space_after=2)
     add_p(doc, "(An Institute of National Importance by an Act of Parliament)", align=WD_ALIGN_PARAGRAPH.CENTER, italic=True, font_size=11, space_after=8)
-    add_p(doc, "DEC 2026", align=WD_ALIGN_PARAGRAPH.CENTER, bold=True, font_size=12, space_after=0)
+    add_p(doc, "DECEMBER 2026", align=WD_ALIGN_PARAGRAPH.CENTER, bold=True, font_size=12, space_after=0)
 
     doc.add_page_break()
 
@@ -208,11 +220,10 @@ def generate_report():
     add_h1(doc, "BONAFIDE CERTIFICATE", space_before=10, space_after=18)
     cert_text = (
         "This is to certify that the project report entitled “Decentralized Dynamic Orchestration for Distributed Sagas "
-        "in Serverless Cloud Architectures” submitted by Shlok bearing the MIS No: 112115123, [Group Member 2] bearing the MIS No: _____, "
-        "and [Group Member 3] bearing the MIS No: _____, in completion of their B.Tech project work under the guidance of "
-        "[Supervisor's Name] is accepted for the project report submission in partial fulfillment of the requirements for the "
-        "award of the degree of Bachelor of Technology in the Department of Computer Science and Engineering, Indian Institute of "
-        "Information Technology, Pune (IIIT Pune), during the academic year 2026-27."
+        "in Serverless Cloud Architectures” submitted by Shlok bearing the MIS No: 112115123, in completion of his/her "
+        "project work under the guidance of [Project Supervisor] is accepted for the project report submission in partial fulfillment "
+        "of the requirements for the award of the degree of Bachelor of Technology in the Department of Computer Science and Engineering, "
+        "Indian Institute of Information Technology, Pune (IIIT Pune), during the academic year 2026-27."
     )
     add_p(doc, cert_text, align=WD_ALIGN_PARAGRAPH.JUSTIFY, font_size=12, space_after=40)
 
@@ -225,10 +236,10 @@ def generate_report():
             r.cells[idx].width = w
 
     sig_data = [
-        ("[Supervisor's Name]", "[HoD Name]"),
-        ("Project Supervisor", "Head of the Department"),
-        ("Assistant Professor / Associate Professor", "Department of Computer Science & Engineering"),
-        ("Department of CSE, IIIT Pune", "IIIT Pune"),
+        ("[Project Supervisor]", "Head of the Department"),
+        ("Project Supervisor", "Department of CSE"),
+        ("Department of Computer Science & Engineering", "Indian Institute of Information Technology, Pune"),
+        ("IIIT Pune", "IIIT Pune"),
     ]
     for r_idx, (col1, col2) in enumerate(sig_data):
         c1 = sig_tbl.cell(r_idx, 0)
@@ -254,21 +265,19 @@ def generate_report():
     # =========================================================================
     add_h1(doc, "Undertaking for Plagiarism", space_before=10, space_after=18)
     plag_text = (
-        "I/We, Shlok and co-authors, solemnly declare that the research work presented in the report/dissertation titled "
-        "“Decentralized Dynamic Orchestration for Distributed Sagas in Serverless Cloud Architectures” is solely our research work "
+        "I, Shlok, solemnly declare that the research work presented in the report/dissertation titled "
+        "“Decentralized Dynamic Orchestration for Distributed Sagas in Serverless Cloud Architectures” is solely my research work "
         "with no significant contribution from any other person. Small contributions or guidance wherever taken have been duly "
-        "acknowledged and that the complete report has been written by us.\n\n"
-        "I/We understand the zero-tolerance policy of the Indian Institute of Information Technology, Pune towards plagiarism. "
-        "Therefore, I/we declare that no portion of our report has been plagiarized and any material used as reference is properly "
-        "referred and cited according to academic standards. I/We undertake that if found guilty of any formal plagiarism in the "
-        "above-titled project even after the award of the degree, the Institute reserves the full right to withdraw or revoke our B.Tech degree."
+        "acknowledged and that the complete report has been written by me.\n\n"
+        "I understand the zero-tolerance policy of the Indian Institute of Information Technology, Pune towards plagiarism. "
+        "Therefore, I declare that no portion of my report has been plagiarized and any material used as reference is properly "
+        "referred and cited according to academic standards. I undertake that if found guilty of any formal plagiarism in the "
+        "above-titled project even after the award of the degree, the Institute reserves the full right to withdraw or revoke my B.Tech degree."
     )
     add_p(doc, plag_text, align=WD_ALIGN_PARAGRAPH.JUSTIFY, font_size=12, space_after=30)
 
-    add_p(doc, "Student’s Name and Signature with Date:", bold=True, font_size=12, space_after=4)
-    add_p(doc, "1. Shlok  (MIS: 112115123)  _________________________________  Date: ___________", font_size=11, space_after=4)
-    add_p(doc, "2. [Student 2]  (MIS: _________)  _________________________________  Date: ___________", font_size=11, space_after=4)
-    add_p(doc, "3. [Student 3]  (MIS: _________)  _________________________________  Date: ___________", font_size=11, space_after=20)
+    add_p(doc, "Student’s Name and Signature with Date:", bold=True, font_size=12, space_after=6)
+    add_p(doc, "Shlok  (MIS No: 112115123)  _________________________________  Date: ___________", font_size=11, space_after=20)
 
     doc.add_page_break()
 
@@ -278,7 +287,7 @@ def generate_report():
     add_h1(doc, "Conflict of Interest", space_before=10, space_after=18)
     add_p(doc, "Manuscript Title: Decentralized Dynamic Orchestration for Distributed Sagas in Serverless Cloud Architectures", bold=True, font_size=12, space_after=10)
     coi_text = (
-        "The authors whose names are listed immediately below certify that they have NO affiliations with or involvement in any "
+        "The author whose name is listed immediately below certifies that they have NO affiliations with or involvement in any "
         "organization or entity with any financial interest (such as honoraria, educational grants, participation in speakers' bureaus, "
         "membership, employment, consultancies, stock ownership, or other equity interest; and expert testimony or patent-licensing arrangements), "
         "or non-financial interest (such as personal or professional relationships, affiliations, knowledge, or beliefs) in the subject matter "
@@ -286,10 +295,8 @@ def generate_report():
     )
     add_p(doc, coi_text, align=WD_ALIGN_PARAGRAPH.JUSTIFY, font_size=12, space_after=30)
 
-    add_p(doc, "Student’s Name and Signature with Date:", bold=True, font_size=12, space_after=4)
-    add_p(doc, "1. Shlok  (MIS: 112115123)  _________________________________  Date: ___________", font_size=11, space_after=4)
-    add_p(doc, "2. [Student 2]  (MIS: _________)  _________________________________  Date: ___________", font_size=11, space_after=4)
-    add_p(doc, "3. [Student 3]  (MIS: _________)  _________________________________  Date: ___________", font_size=11, space_after=20)
+    add_p(doc, "Student’s Name and Signature with Date:", bold=True, font_size=12, space_after=6)
+    add_p(doc, "Shlok  (MIS No: 112115123)  _________________________________  Date: ___________", font_size=11, space_after=20)
 
     doc.add_page_break()
 
@@ -299,33 +306,34 @@ def generate_report():
     add_h1(doc, "ACKNOWLEDGEMENT", space_before=10, space_after=18)
     ack_p1 = (
         "This project would not have been possible without the help, guidance, and cooperation of many individuals and institutions. "
-        "We would like to express our deepest gratitude to all those who helped us directly and indirectly in the successful completion "
+        "I would like to express my deepest gratitude to all those who helped me directly and indirectly in the successful completion "
         "of this B.Tech Project."
     )
     add_p(doc, ack_p1, align=WD_ALIGN_PARAGRAPH.JUSTIFY, space_after=8)
 
     ack_p2 = (
-        "First and foremost, we would like to express our highest gratitude to our honorable Director, Prof. Vineet Kansal, for providing "
+        "First and foremost, I would like to express my highest gratitude to our honorable Director, Prof. Vineet Kansal, for providing "
         "invaluable support, state-of-the-art laboratory facilities, and an encouraging academic environment at the Indian Institute of Information "
         "Technology, Pune."
     )
     add_p(doc, ack_p2, align=WD_ALIGN_PARAGRAPH.JUSTIFY, space_after=8)
 
     ack_p3 = (
-        "We would like to express our profound gratitude to our project supervisor, [Supervisor's Name], Department of Computer Science and Engineering, "
+        "I would like to express my profound gratitude to my project supervisor, [Project Supervisor], Department of Computer Science and Engineering, "
         "for providing exceptional guidance, constant technical inspiration, constructive criticism, and timely support throughout every phase of "
         "this investigation. Their rigorous insights into distributed systems and cloud architecture were indispensable."
     )
     add_p(doc, ack_p3, align=WD_ALIGN_PARAGRAPH.JUSTIFY, space_after=8)
 
     ack_p4 = (
-        "We are also thankful to the Head of the Department, Department of CSE, for providing institutional support and academic resources. "
-        "We extend our sincere thanks to all faculty members, technical staff, and our classmates in the Department of Computer Science and Engineering "
+        "I am also thankful to the Head of the Department, Department of CSE, for providing institutional support and academic resources. "
+        "I extend my sincere thanks to all faculty members, technical staff, and my classmates in the Department of Computer Science and Engineering "
         "for their steadfast engagement, valuable discussions, and camaraderie."
     )
     add_p(doc, ack_p4, align=WD_ALIGN_PARAGRAPH.JUSTIFY, space_after=16)
 
-    add_p(doc, "Shlok and Project Team", bold=True, font_size=12, align=WD_ALIGN_PARAGRAPH.RIGHT)
+    add_p(doc, "Shlok", bold=True, font_size=12, align=WD_ALIGN_PARAGRAPH.RIGHT)
+    add_p(doc, "MIS No: 112115123", italic=True, font_size=11, align=WD_ALIGN_PARAGRAPH.RIGHT)
     add_p(doc, "Department of Computer Science and Engineering", italic=True, font_size=11, align=WD_ALIGN_PARAGRAPH.RIGHT)
     add_p(doc, "Indian Institute of Information Technology, Pune", italic=True, font_size=11, align=WD_ALIGN_PARAGRAPH.RIGHT)
 
@@ -1206,8 +1214,8 @@ def generate_report():
         ("Phase 6", "Path C: Static Hybrid (SFN Core + EB Edge DLQ)", "Completed & Verified (Commit 1d7f10a)"),
         ("Phase 7", "Workload Expansion (7A TrainTicket & 7B Wide-Fan)", "Completed & Verified (Commit be61ed9)"),
         ("Phase 8", "Harness, Derived Metrics, Pricing & Cost Model", "Completed & Verified (Commit 12fce98)"),
-        ("Phase 9", "SimPy Discrete-Event Simulation Engine", "Pending Human Approval ('go')"),
-        ("Phase 10", "Frozen Analysis Plan & Full Experiment Evaluation", "Prerequisite Gate Satisfied (Commit 2ec6cac)"),
+        ("Phase 9", "SimPy Discrete-Event Simulation Engine", "Completed & Verified (Commit f344490)"),
+        ("Phase 10", "Frozen Analysis Plan & Full Experiment Evaluation", "Completed & Verified (Commit 9d2e002)"),
         ("Phase 11", "Paper Assets, Statistics Module, Figures & Tables", "Completed & Verified (Commit 2ec6cac)"),
     ]
     m_tbl = doc.add_table(rows=len(milestones) + 1, cols=3)
