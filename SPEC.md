@@ -154,7 +154,7 @@ Rule for who writes `SAGA_COMPENSATED`: the component executing the final compen
 
 ## 4. Phases
 
-Dependency order: P0 → P1 → {P2, P3, P4, P8, P9a} in parallel → P5 (needs P4) → P6 (needs P2 + P3) → P7A/P7B (need P1 + builders from P2/P3) → P10.
+Dependency order: P0 → P1 → {P2, P3, P4, P8, P9a} in parallel → P5 (needs P4) → P6 (needs P2 + P3) → P7A/P7B (need P1 + builders from P2/P3) → P10 (needs everything, plus an approved `ANALYSIS_PLAN.md`) → P11. P11's statistics module and figure/table code can be built and tested on synthetic data in parallel from P8 onward.
 
 ### Phase 0: Audit, LocalStack spikes, contracts, repo hygiene
 
@@ -395,24 +395,107 @@ Acceptance:
 
 ---
 
-### Phase 10: Experiments and reporting
+### Phase 10: Frozen analysis plan, full experiment run, provenance
 
-**Goal:** run the full matrix and produce report-ready artifacts from raw data in one command.
+**Goal:** collect the real data once, under a pre-committed analysis plan, with enough provenance that every number in the paper can be reproduced and audited.
+**Why:** deciding which comparisons matter *after* seeing results invites cherry-picking. A reviewer will ask. The plan is committed before the full run and the run's git hash is recorded.
 
 Tasks:
-1. Run `experiments/configs/full.json`: 4 paths × workloads {`order`, `trainticket`, `wide-4`} × `workScale` {1} (plus a single `workScale=0` sensitivity run on `order`). Keep the raw JSONL under `results/raw/`.
-2. `analysis/make_report.py` generates, from raw JSONL only: per workload, a table of all six metrics for A/B/C/D (median, p95, n, bootstrap 95% CI on the median); the **ablation table** (D-parallel vs D-LIFO makespan reduction, split **by failure depth**); a Pareto plot (median compensation latency vs coupling) per workload; a cost-per-1,000-txns bar chart; throughput and p95 charts; a consistency table including D's leader-crash results.
-3. `docs/THREATS_TO_VALIDITY.md` (see §5, fill with measured facts).
-4. Optional extras if time allows, in this order: A-parallel (Step Functions `Parallel` state in the Catch path) and B-fanout variants, reported as extra columns in the same tables.
+1. **Prerequisite gate.** `docs/ANALYSIS_PLAN.md` (template in Phase 11, §11.1) must be committed and **approved by a human** before `full.json` is run. Record its commit hash in the run manifest.
+2. Add `harness/manifest.py`, hooked into `run_experiment.py`, writing `results/raw/<runTag>.manifest.json` automatically: git commit and dirty flag; LocalStack version (health endpoint); host CPU count, RAM, OS, Docker version; Python and library versions; SHA-256 of the config file and of `ANALYSIS_PLAN.md`; seed; start/end timestamps; counts of runs, warm-ups, timeouts, and errors.
+3. Run `experiments/configs/full.json`: 4 paths × workloads {`order`, `trainticket`, `wide-4`} at `workScale=1`; plus one `workScale` ∈ {0, 3} sensitivity run on `order`; plus a **load sweep** at offered rates {2, 5, 10} sagas/s (calibrate the top rate in the smoke run so the host is not saturated; record the choice). Keep raw JSONL under `results/raw/`.
+4. Failed or timed-out runs (no terminal state within 60 s) are **kept** and counted as right-censored at 60 s. They are never silently dropped.
+5. Append one entry per run to `docs/EXPERIMENT_LOG.md`: date, runTag, config name, wall-clock duration, anomalies seen (LocalStack restarts, host load, retries), and anything a reader would need to judge validity.
+6. Optional stretch, if time allows and a human approves: A-parallel (Step Functions `Parallel` in the Catch path) and B-fanout variants, run as extra paths `A-par`, `B-fan` under the same plan.
 
 Acceptance:
-- `python analysis/make_report.py --runTag <tag>` regenerates every table/figure; `results/REPORT_TABLES.md` and `results/figures/*.png` exist.
-- Every number in the tables traces to a row in `results/raw/`.
-- The ablation table has one row per failure depth and states plainly where the gain is zero.
+- `results/raw/<tag>.jsonl` and `<tag>.manifest.json` exist; run counts equal the config's expectation; timeouts are counted in the manifest.
+- `docs/EXPERIMENT_LOG.md` has an entry for each run.
+- No code changed between the manifest's commit and the run (dirty flag false).
 
 ---
 
-## 5. Threats to validity (must appear in the report; Phase 10 fills them in)
+### Phase 11: Research-paper assets (figures, tables, statistics, text numbers)
+
+**Goal:** from the raw data alone, one command regenerates every figure, table, statistic, and in-text number the paper needs, in publication-ready form. Humans write the interpretation; the tooling writes only facts.
+
+Single entry point: `python paper/build_assets.py --runTag <tag>`.
+
+#### 11.1 Analysis plan template (`docs/ANALYSIS_PLAN.md`, written before Phase 10 and approved by a human)
+
+Must contain, filled in with final choices:
+- **Hypotheses** (derived from the proposal's research question):
+  - H1: On workloads and failure depths where the compensation DAG has width ≥ 2 (order at Notification; `wide-4`; `wide-6` if run), D's median compensation latency is lower than A's, B's, and C's.
+  - H2: Where the DAG is a chain (order at Payment and Inventory), D's median compensation latency is not lower than the baselines'. Expected overhead = election time. State the margin δ (e.g., 20% of the baseline median) within which a difference is considered "no practical difference".
+  - H3 (ablation): D-parallel makespan < D-LIFO makespan where width ≥ 2, and equal within δ where the DAG is a chain.
+  - H4: D's steady-state coupling equals B's, and D's orchestrator static-reference count is 0.
+  - H5: D's recovery consistency is no lower than B's, including under leader-crash faults.
+- **Primary comparisons** (these get Holm correction): D vs A, D vs B, D vs C on compensation latency, per workload × failure depth cell; D-parallel vs D-LIFO per cell. Everything else is labeled *exploratory* in every table and figure caption.
+- **Statistics:** unit of analysis is one saga run. Descriptives: n, median, IQR, p95. Intervals: 95% percentile bootstrap CI on the median, 10,000 resamples, fixed seed. Pairwise: two-sided Mann-Whitney U, Holm-adjusted across primary comparisons, α = 0.05. Effect sizes: Cliff's delta and the Hodges-Lehmann median difference with bootstrap CI. Censored runs (timeouts) enter the ranks at 60 s and are counted in every table's n column.
+- **Exclusions:** only the warm-up runs (first 10 per path). No outlier removal. Any other exclusion needs a human-approved note in `EXPERIMENT_LOG.md`.
+- **Sensitivity:** `workScale` ∈ {0, 1, 3}. State which conclusions are expected to be robust to it.
+
+#### 11.2 Statistics module
+
+`paper/stats.py`: `bootstrap_ci_median`, `mann_whitney`, `cliffs_delta`, `hodges_lehmann`, `holm_adjust`. Pure functions, seeded, no plotting. Use `numpy` and `scipy`.
+
+#### 11.3 Figures (matplotlib; every figure also saved with its plotted data)
+
+Style, applied by one `paper/style.py` used by all figures:
+- Colorblind-safe Okabe-Ito colors, fixed per series everywhere: A `#0072B2`, B `#E69F00`, C `#009E73`, D `#D55E00`, D-LIFO `#CC79A7` (plus hatch), A-par/B-fan (if run) lighter variants with dashed outlines.
+- Widths: 3.4 in (single column) or 7.0 in (double column); font size 8-9 pt; no title inside the figure (the caption carries it); axis labels with units; direct labels over legends where there are ≤ 4 series.
+- Output per figure: `paper/figures/<id>.pdf` (vector), `<id>.png` (300 dpi), `paper/figures/data/<id>.csv` (the exact plotted data, including n), and `<id>.caption.md` (factual draft: what is plotted, units, n per series, CI method, primary vs exploratory. **No interpretive claims**).
+
+| ID | Figure | Type, axes, source |
+|---|---|---|
+| F1 | Architecture of paths A, B, C, D | Graphviz, generated from the real ASL and the rule sets (not hand-drawn), so the figure cannot disagree with the code. One panel per path, normal flow and compensation flow styled differently. |
+| F2 | Compensation DAGs per workload and failure depth | Graphviz, generated from `common/workloads.py`. Shows which nodes are compensated for each failure depth and the width, plus the LIFO order vs the parallel layers. |
+| F3 | Representative compensation timelines | Gantt chart from `SagaTrace`: one saga per path, same scenario (order at Notification; `wide-4` at last step). Pick the run whose compensation latency is closest to the cell median (deterministic rule). Show election, lease-acquire, and each compensation as bars; the overlap in D is the visual point. |
+| F4 | Compensation latency distributions | Violin + strip + median marker, x = path, y = ms, facets = workload × failure depth. Right-censored runs drawn as open markers at 60 s. |
+| F5 | Ablation: parallel vs LIFO in D | Grouped bars, x = failure depth (and DAG width for `wide-*`), y = median makespan (ms) with 95% CI; secondary panel: % reduction with CI. |
+| F6 | Pareto: latency vs coupling | Scatter, x = coupling score (definition in Phase 8), y = median compensation latency (ms), one point per path with CI bars, one panel per workload; the non-dominated set outlined. |
+| F7 | Cost of the election in D | Stacked bars per scenario: election_time + scheduling_makespan; and a histogram of election_time with participant count annotated; counts of `LEASE_LOST` and `WATCHER_RETRY`. |
+| F8 | Throughput and latency under load | Lines, x = offered rate (sagas/s), y = (a) achieved throughput, (b) p95 happy-path latency, one line per path. |
+| F9 | Cost per 1,000 transactions | Stacked bars by component (Lambda, EventBridge, Step Functions, DynamoDB), watcher/idle Lambda time shown as a separate hatched segment for D. |
+| F10 | Recovery consistency and leader crash | (a) % consistent per path; (b) histogram of takeover time (`LEASE_TAKEOVER.ts − crash time`) for D's leader-crash runs, with the theoretical bound `LEASE_TTL_MS + WATCH_JITTER_MS` marked. |
+| F11 | Sensitivity to simulated work | Lines, x = `workScale` (0, 1, 3), y = median compensation latency, one line per path. |
+| F12 | Simulator results (appendix) | (a) makespan reduction vs DAG width (parallel vs LIFO), (b) election overhead vs participants by latency distribution, (c) re-elections vs crash probability, (d) predicted-vs-measured calibration scatter with y = x line. |
+
+#### 11.4 Tables (each emitted as CSV and as LaTeX `booktabs` `.tex`)
+
+| ID | Table | Content |
+|---|---|---|
+| T1 | Related work comparison | Template only, filled by the Documentation lead: rows = [1]–[6] and this work; columns = coordinator fixed or elected, always-on or triggered, scope (partitioning, consensus, compensation scheduling), evaluation. **Marked "to be completed after the full-text check" until §6 item 1 is resolved.** |
+| T2 | Design summary of the four paths | Structural facts generated from the code (steps coordinated centrally, rules, retry policy, lease constants). |
+| T3 | Main results | Per workload: for each path, n, median [95% CI], p95 for compensation latency, happy latency, throughput, cost per 1,000 txns, coupling, consistency %. Split by failure depth for latency. |
+| T4 | Ablation by failure depth | D-parallel vs D-LIFO: n, medians [CI], difference, % reduction [CI], Cliff's delta, Holm-adjusted p. Rows with no expected gain are included and not hidden. |
+| T5 | Primary pairwise comparisons | Every primary comparison from the analysis plan: Hodges-Lehmann difference [CI], Cliff's delta, raw and Holm-adjusted p, verdict word limited to: "lower", "higher", "no significant difference". Exploratory rows are in a separate block. |
+| T6 | Coupling breakdown | Per path, per service and per bus; the D orchestrator static-reference count and the test that proves it. |
+| T7 | Cost model | Price table with source URLs and retrieval dates, counted units per 1,000 txns per path, resulting cost. |
+| T8 | Fault and consistency results | Per path: faults injected by type, runs consistent, runs timed out, duplicate-delivery events ignored, leader-crash recoveries. |
+| T9 | Threats to validity | From §5 with measured values filled in (e.g., how much LocalStack overhead, from the `workScale=0` run). |
+| T10 | Experimental setup | From the manifest: host, versions, LocalStack version, constants from `common/policy.py`, workloads and timings, seeds, run counts. |
+
+#### 11.5 In-text numbers and skeleton
+
+- `paper/numbers.json` and `paper/numbers.tex`: every headline number as a named value / LaTeX macro (e.g. `\numOrderNotifMedianD`, `\numAblationReductionWideFour`). Each carries its CI and n. Paper text should use the macros so figures and prose cannot drift.
+- `paper/results_skeleton.md`: section outline for Results (Setup; Primary comparisons H1–H5; Ablation; Coupling; Cost; Load; Faults and consistency; Sensitivity; Simulator), each with the relevant figure/table IDs and `{{placeholders}}` filled from `numbers.json`. The generated sentences are **descriptive only**: a sentence may state a number, its interval, and one of the three verdict words from T5. Interpretation, motivation, and conclusions are left blank for the authors.
+- `paper/manifest_for_paper.md`: copy of the run manifest formatted as the "Experimental setup" paragraph (host, versions, seeds, counts).
+
+#### 11.6 Reproducibility bundle
+
+`paper/artifact/` (built by `build_assets.py --bundle`): raw JSONL, manifest, configs, `ANALYSIS_PLAN.md`, `pricing.json`, a `REPRODUCE.md` with exact commands (setup → run → build assets), and a `SHA256SUMS`.
+
+Acceptance (`pytest tests/phase11 -q`, plus the command below):
+- `stats.py` against known values: bootstrap CI covers the true median in ≥ 93% of 200 synthetic datasets; Cliff's delta on hand-computed samples; Holm adjustment matches a textbook example; Hodges-Lehmann matches a hand-computed case.
+- Figure builders run on a small synthetic raw file and produce `.pdf`, `.png`, `.csv`, `.caption.md` for every figure ID that has data.
+- For every figure, the number of rows in its data CSV equals the n stated in its caption; for every number macro, `numbers.tex` equals `numbers.json`.
+- A test confirms the primary-comparison list in T5 is exactly the list in `ANALYSIS_PLAN.md` (no extra or missing comparisons).
+- `python paper/build_assets.py --runTag <tag>` completes and `ls paper/figures` shows F1-F12 (F12 from the simulator output) and `ls paper/tables` shows T2-T10 (T1 as a template); `paper/artifact/SHA256SUMS` verifies.
+
+---
+
+## 5. Threats to validity (must appear in the report; Phase 11, table T9, fills them in)
 
 1. **LocalStack is not AWS.** Absolute latencies reflect container emulation. Only relative comparisons and the structure of the results are meaningful, and cost is analytical.
 2. **Baseline fairness (D9).** A and B compensate sequentially by default. A reviewer can argue they could parallelize; the optional stretch variants address this. B parallelizing would require each service to know dependency information locally, which is itself coupling.
@@ -429,6 +512,7 @@ Acceptance:
 2. Confirm that "cancel Order last" (`compensateAfter: ["*"]`) is the intended business rule. It determines whether the order workload can show any scheduler gain.
 3. Confirm Phase 7B (synthetic wide-fan) is added to scope. It is not in the proposal; the recommended cut order if time is short is: stretch variants → 7A → SimPy sweep breadth. Never cut Paths A–D or Phase 4–5.
 4. Decide whether the stretch baselines A-parallel and B-fanout are in or out of scope (mentor input).
+5. Approve `docs/ANALYSIS_PLAN.md` (hypotheses, margin δ, primary comparisons) **before** the Phase 10 full run, and write the interpretation and conclusions in the paper. The tooling only produces facts.
 
 ## 7. Team mapping (for parallel execution after Phase 1)
 
@@ -437,5 +521,5 @@ Acceptance:
 | Orchestration lead | P2, then P6 core, then A-parallel stretch |
 | Choreography lead | P3, then P6 edge |
 | Election & scheduling lead | P4, P5, then P9 |
-| Testing & metrics lead | P1 (with all), P8, P10 |
-| Documentation lead | P0 audit review, P7A mapping, threats to validity, §6 item 1 |
+| Testing & metrics lead | P1 (with all), P8, P10, P11 (stats, figures, tables, numbers) |
+| Documentation lead | P0 audit review, P7A mapping, `ANALYSIS_PLAN.md` (§11.1), T1, results prose from `results_skeleton.md`, threats to validity, §6 item 1 |

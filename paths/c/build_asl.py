@@ -22,7 +22,7 @@ def build_asl(
     On core completion, publishes OrderCoreCompleted to saga-bus-c.
     On failure, runs sequential compensation chain for completed core steps.
     """
-    core_steps = [s for s in workload.steps if s.name.lower() != "notification"]
+    core_steps = workload.steps[:-1] if len(workload.steps) > 1 else workload.steps
     num_core = len(core_steps)
     if num_core == 0:
         raise ValueError("Workload must contain at least one core step.")

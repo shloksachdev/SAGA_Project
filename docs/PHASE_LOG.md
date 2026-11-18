@@ -833,3 +833,104 @@ Exit code: 0
 - Phase 5 Path D Part 2 (DAG & LIFO Ablation): 20 / 20 passed
 - Phase 6 Path C (Static Hybrid Baseline): 4 / 4 passed
 
+---
+
+## Phase 7: Workload Expansion (7A TrainTicket-Derived & 7B Synthetic Wide-Fan)
+
+### Goal
+Implement and verify two additional workload configurations to characterize saga coordination beyond the basic 4-step e-commerce baseline:
+1. **Phase 7A (TrainTicket-Derived)**: Asymmetric dependency structure on the 4 services (`Payment` refund depends on `Inventory` seat release via `compensateAfter: ["Inventory"]`, `Order` booking cancellation waits for all via `compensateAfter: ["*"]`), with realistic timing profiles (pay/refund 300ms, seat release 200ms, book/cancel/notify 100ms).
+2. **Phase 7B (Synthetic Wide-Fan)**: Generic Lambda handler parameterized by `STEP_NAME` (`Step1`..`Step6`), implementing workloads `wide-2`, `wide-4`, `wide-6` where parallel compensation concurrency actually exists, enabling empirical verification of makespan reduction.
+
+### Completed Tasks
+1. `common/workloads.py`:
+   - Added `TRAINTICKET_WORKLOAD`: mapping Order=book, Payment=pay, Inventory=seat-allocate, Notification=confirmation. Timings: pay 300ms, seat release 200ms, book/cancel/notify 100ms. Dependencies: `Payment: ["Inventory"]`, `Order: ["*"]`, others `[]`.
+   - Added `WIDE_2_WORKLOAD`, `WIDE_4_WORKLOAD`, `WIDE_6_WORKLOAD`: Order first, followed by *k* sequential forward steps (`Step1`..`StepK`), all with `compensateAfter=[]` except `Order: ["*"]`. Compensation durations differ per step (100–1000 ms).
+   - Registered all workloads in `WORKLOADS`.
+2. `generic_handler.py`:
+   - Single reusable handler parameterized via environment variable `STEP_NAME`.
+   - Delegates to `execute_step` with generic forward/compensate functions and events (`{step}Success`, `{step}Failed`, `{step}Compensated`).
+3. `infra/deploy_generic.py`:
+   - Python deployment utility bundling `generic_handler.py` and `common/` into `Generic.zip` and deploying `Step1` through `Step6` to LocalStack.
+4. Adaptations & Bug Fixes:
+   - `common/handler_helper.py`: Generalized final-step detection using `is_final_step = (step_name.lower() == wl.steps[-1].name.lower())` replacing hardcoded `"Notification"`, and scoped it before the forward try block to prevent `NameError` during edge failures.
+   - `paths/c/build_asl.py`: Generalized core vs edge separation (`core_steps = workload.steps[:-1]` and `edge_step = workload.steps[-1]`).
+   - `paths/d/provision.py`: Sharded EventBridge election targets into chunks of at most 5 per rule to respect EventBridge's 5-target limit per rule.
+   - `paths/a/run.py` & `paths/c/run.py`: Dynamically deploy workload-specific state machines (`saga-path-a-{workload}`, `saga-path-c-{workload}`).
+   - `docs/WORKLOADS.md`: Fully documented workload definitions and declared TrainTicket as a shape-level port per SPEC requirements.
+5. Tests:
+   - `tests/phase7/test_trainticket.py`: 7 tests covering Paths A, B, C, and D with `trainticket`. Verified dynamic dependency enforcement on Path D (`pay_start >= inv_done` and `order_start >= pay_done`).
+   - `tests/phase7/test_wide_fan.py`: 2 tests covering `wide-4` happy path forward execution and makespan comparison.
+   - **Makespan reduction verified**: Path D parallel makespan (1868 ms) vs sequential LIFO (3508 ms) demonstrated a **46.75% reduction** (exceeding the required >= 25% threshold).
+
+---
+
+### Evidence
+
+#### 1. `pytest tests/phase7/ -v` Output
+
+```text
+============================= test session starts =============================
+platform win32 -- Python 3.12.2, pytest-9.0.2, pluggy-1.6.0 -- C:\Users\shlok\AppData\Local\Programs\Python\Python312\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\shlok\OneDrive\Desktop\Projects\SAGA_Project
+configfile: pytest.ini
+plugins: anyio-4.9.0, hydra-core-1.3.2, langsmith-0.7.6, asyncio-1.4.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 9 items
+
+tests/phase7/test_trainticket.py::test_trainticket_path_a_happy_path PASSED [ 11%]
+tests/phase7/test_trainticket.py::test_trainticket_path_a_failure_compensation PASSED [ 22%]
+tests/phase7/test_trainticket.py::test_trainticket_path_b_happy_path PASSED [ 33%]
+tests/phase7/test_trainticket.py::test_trainticket_path_b_failure_compensation PASSED [ 44%]
+tests/phase7/test_trainticket.py::test_trainticket_path_c_happy_path PASSED [ 55%]
+tests/phase7/test_trainticket.py::test_trainticket_path_c_edge_failure PASSED [ 66%]
+tests/phase7/test_trainticket.py::test_trainticket_path_d_dependency_order PASSED [ 77%]
+tests/phase7/test_wide_fan.py::test_wide_fan_happy_path PASSED           [ 88%]
+tests/phase7/test_wide_fan.py::test_wide_fan_parallel_vs_lifo_makespan PASSED [100%]
+
+================== 9 passed, 1 warning in 226.54s (0:03:46) ===================
+Exit code: 0
+```
+
+Verified scenarios:
+- **Phase 7A (TrainTicket)**:
+  - Path A happy path and compensation catch reverse order.
+  - Path B happy path and compensation chain reverse order.
+  - Path C happy path and edge DLQ failure (`edgeFailure=True`).
+  - Path D dynamic dependency verification: Payment waited for Inventory (`pay_start >= inv_done`), Order waited for Payment (`order_start >= pay_done`), all 3 steps ended with `compApplied == 1`.
+- **Phase 7B (Wide-Fan)**:
+  - `test_wide_fan_happy_path`: 5 sequential forward steps (Order + Step1..Step4) complete with `SAGA_COMPLETED`.
+  - `test_wide_fan_parallel_vs_lifo_makespan`:
+    - Parallel makespan: `1868 ms`
+    - LIFO makespan: `3508 ms`
+    - Makespan reduction: **46.75%** (asserted >= 25% lower, PASS).
+
+#### 2. `.\test.ps1` Direct Invocation Regression Run
+
+```text
+=== Re-verifying all 4 Lambda functions directly ===
+
+-- Order --
+  [PASS] create: {"orderId": "order-123", "status": "ORDER_CREATED"}
+  [PASS] cancel: {"orderId": "order-123", "status": "ORDER_CANCELLED"}
+
+-- Payment --
+  [PASS] charge: {"orderId": "order-123", "status": "PAYMENT_COMPLETED"}
+  [PASS] compensate: {"orderId": "order-123", "status": "PAYMENT_COMPENSATED"}
+
+-- Inventory --
+  [PASS] reserve: {"orderId": "order-123", "status": "INVENTORY_RESERVED"}
+  [PASS] release: {"orderId": "order-123", "status": "INVENTORY_RELEASED"}
+
+-- Notification --
+  [PASS] notify: {"orderId": "order-123", "status": "NOTIFICATION_SENT"}
+  [PASS] unnotify: {"orderId": "order-123", "status": "NOTIFICATION_RETRACTED"}
+
+=== Summary ===
+Re-verification: 8 / 8 direct invoke tests passed
+All 4 Lambdas deployed successfully and all tests passed.
+Exit code: 0
+```
+
+

@@ -34,8 +34,9 @@ def deploy_election_rule(
     account_id: str = DEFAULT_ACCOUNT_ID,
 ) -> str:
     """
-    Creates one rule matching CompensationNeeded that targets ALL services
+    Creates rule(s) matching CompensationNeeded that target ALL services
     in the workload with action=elect (Phase 4 Task 3).
+    Splits across multiple rules if targets exceed EventBridge limit of 5.
     """
     events = get_boto3_client("events")
     lambda_client = get_boto3_client("lambda")
@@ -45,20 +46,15 @@ def deploy_election_rule(
         "detail-type": ["CompensationNeeded"],
     }
 
-    # 1. Put Rule
-    resp = events.put_rule(
-        Name=rule_name,
-        EventBusName=bus_name,
-        EventPattern=json.dumps(pattern),
-        State="ENABLED",
-        Description="Path D fan-in election rule for CompensationNeeded",
+    base_rule_name = (
+        f"path-d-election-{workload.name}"
+        if rule_name == ELECTION_RULE_NAME and workload.name not in ("order", "trainticket")
+        else rule_name
     )
-    rule_arn = resp.get("RuleArn") or f"arn:aws:events:{reg}:{account_id}:rule/{bus_name}/{rule_name}"
 
-    # 2. Put targets for all services with action=elect
     targets = []
     for step in workload.steps:
-        target_id = f"path-d-elect-{step.name.lower()}"
+        target_id = f"path-d-elect-{workload.name}-{step.name.lower()}"
         lambda_arn = f"arn:aws:lambda:{reg}:{account_id}:function:{step.name}"
 
         targets.append(
@@ -69,31 +65,65 @@ def deploy_election_rule(
                     "InputPathsMap": {"detail": "$.detail"},
                     "InputTemplate": '{"detail": <detail>, "action": "elect"}',
                 },
+                "_func_name": step.name,
             }
         )
 
-        # Add Lambda invoke permission
-        statement_id = f"eb-{bus_name}-{rule_name}-{step.name.lower()}"
+    chunk_size = 5
+    created_rule_names = []
+
+    for chunk_idx in range(0, len(targets), chunk_size):
+        chunk = targets[chunk_idx : chunk_idx + chunk_size]
+        sub_rule_name = f"{base_rule_name}-{chunk_idx // chunk_size + 1}" if len(targets) > chunk_size else base_rule_name
+
+        resp = events.put_rule(
+            Name=sub_rule_name,
+            EventBusName=bus_name,
+            EventPattern=json.dumps(pattern),
+            State="ENABLED",
+            Description=f"Path D fan-in election rule for CompensationNeeded ({sub_rule_name})",
+        )
+        rule_arn = resp.get("RuleArn") or f"arn:aws:events:{reg}:{account_id}:rule/{bus_name}/{sub_rule_name}"
+
+        # Clean existing targets if needed
         try:
-            lambda_client.add_permission(
-                FunctionName=step.name,
-                StatementId=statement_id,
-                Action="lambda:InvokeFunction",
-                Principal="events.amazonaws.com",
-                SourceArn=rule_arn,
-            )
-        except botocore.exceptions.ClientError as e:
-            if e.response["Error"]["Code"] not in ("ResourceConflictException", "ResourceInUseException"):
-                logger.warning(f"Failed to add permission for {step.name}: {e}")
+            existing = events.list_targets_by_rule(Rule=sub_rule_name, EventBusName=bus_name).get("Targets", [])
+            if existing:
+                existing_ids = [t["Id"] for t in existing]
+                new_ids = {t["Id"] for t in chunk}
+                to_remove = [tid for tid in existing_ids if tid not in new_ids]
+                if to_remove:
+                    events.remove_targets(Rule=sub_rule_name, EventBusName=bus_name, Ids=to_remove)
+        except Exception:
+            pass
 
-    events.put_targets(
-        Rule=rule_name,
-        EventBusName=bus_name,
-        Targets=targets,
-    )
+        # Add Lambda invoke permissions
+        clean_chunk = []
+        for t in chunk:
+            func_name = t.pop("_func_name")
+            clean_chunk.append(t)
+            statement_id = f"eb-{bus_name}-{sub_rule_name}-{func_name.lower()}"
+            try:
+                lambda_client.add_permission(
+                    FunctionName=func_name,
+                    StatementId=statement_id,
+                    Action="lambda:InvokeFunction",
+                    Principal="events.amazonaws.com",
+                    SourceArn=rule_arn,
+                )
+            except botocore.exceptions.ClientError as e:
+                if e.response["Error"]["Code"] not in ("ResourceConflictException", "ResourceInUseException"):
+                    logger.warning(f"Failed to add permission for {func_name}: {e}")
 
-    print(f"  [provision-path-d] Election rule created: {rule_name} targeting {len(targets)} services")
-    return rule_name
+        events.put_targets(
+            Rule=sub_rule_name,
+            EventBusName=bus_name,
+            Targets=clean_chunk,
+        )
+        created_rule_names.append(sub_rule_name)
+        print(f"  [provision-path-d] Election rule created: {sub_rule_name} targeting {len(clean_chunk)} services")
+
+    return created_rule_names[0] if created_rule_names else base_rule_name
 
 
 def deploy(

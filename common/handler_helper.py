@@ -61,6 +61,7 @@ def execute_step(
     step_cfg = wl.get_step(step_name)
     if not step_cfg:
         raise ValueError(f"Step {step_name} not found in workload {envelope.workload}")
+    is_final_step = (step_name.lower() == wl.steps[-1].name.lower())
 
     with metered_invocation(envelope.sagaId, actor=step_name, path=envelope.path):
         is_forward = action in (step_cfg.forwardAction, "forward", "create", "charge", "reserve", "notify")
@@ -93,8 +94,10 @@ def execute_step(
                     order_id=order_id,
                 )
 
+                is_final_step = (step_name.lower() == wl.steps[-1].name.lower())
+
                 # If final forward step, mark saga complete
-                if step_name == "Notification":
+                if is_final_step:
                     emit(envelope.sagaId, SAGA_COMPLETED, actor=step_name, path=envelope.path)
                     try:
                         runs_table = get_table("SagaRuns")
@@ -112,7 +115,7 @@ def execute_step(
 
                 # Publish success event for event-driven paths (B, D, C-edge)
                 should_publish = envelope.path in ("B", "D") or (
-                    envelope.path == "C" and step_name == "Notification"
+                    envelope.path == "C" and is_final_step
                 )
                 if should_publish and success_event_name:
                     bus_name = get_bus_for_path(envelope.path)
@@ -136,11 +139,11 @@ def execute_step(
 
                 # Business failure handling per path (D13)
                 is_event_driven = envelope.path in ("B", "D") or (
-                    envelope.path == "C" and step_name == "Notification"
+                    envelope.path == "C" and is_final_step
                 )
                 if is_event_driven:
-                    # Path C Notification edge failure: send to SQS DLQ, record NOTIFICATION_DLQ, do NOT rollback core (Spike S7)
-                    if envelope.path == "C" and step_name == "Notification":
+                    # Path C edge failure: send to SQS DLQ, record NOTIFICATION_DLQ, do NOT rollback core (Spike S7)
+                    if envelope.path == "C" and is_final_step:
                         _send_to_dlq(envelope, e)
                         from common.contracts import NOTIFICATION_DLQ
                         emit(

@@ -48,6 +48,11 @@ def start_saga(
     envelope.path = "D"
     ts = now_ms()
 
+    # Ensure bus rules for non-default workloads exist
+    if envelope.workload not in ("order", "trainticket"):
+        from paths.d.provision import deploy as deploy_d
+        deploy_d(bus_name=get_bus_for_path("D"), workload_name=envelope.workload)
+
     # 1. Initialize SagaRuns record
     runs_table = get_table(RUNS_TABLE_NAME)
     runs_table.put_item(

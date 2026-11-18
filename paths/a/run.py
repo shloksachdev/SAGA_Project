@@ -29,12 +29,13 @@ def start_saga(
     account_id = "000000000000"
 
     if not state_machine_arn:
-        state_machine_arn = f"arn:aws:states:{region}:{account_id}:stateMachine:{DEFAULT_STATE_MACHINE_NAME}"
+        sm_name = DEFAULT_STATE_MACHINE_NAME if envelope.workload == "order" else f"{DEFAULT_STATE_MACHINE_NAME}-{envelope.workload}"
+        state_machine_arn = f"arn:aws:states:{region}:{account_id}:stateMachine:{sm_name}"
         # Ensure deployed
         try:
             sfn.describe_state_machine(stateMachineArn=state_machine_arn)
         except Exception:
-            state_machine_arn = deploy(DEFAULT_STATE_MACHINE_NAME, workload_name=envelope.workload)
+            state_machine_arn = deploy(sm_name, workload_name=envelope.workload)
 
     saga_id = envelope.sagaId
     ts = now_ms()
