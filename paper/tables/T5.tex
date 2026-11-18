@@ -1,0 +1,23 @@
+\begin{table}[htbp]
+\centering
+\caption{Summary Table T5}
+\label{tab:t5}
+\begin{tabular}{llllllll}
+\toprule
+Comparison ID & Scenario / Cell & Comparison & Hodges-Lehmann [95% CI] & Cliff's Delta & Raw p & Holm-Adjusted p & Verdict \\
+\midrule
+1 & (order, notification\_failure) & D vs. A & -220 [-310, -140] & -0.62 & 0.002 & 0.024 & lower \\
+2 & (order, notification\_failure) & D vs. B & -180 [-270, -90] & -0.55 & 0.005 & 0.050 & lower \\
+3 & (order, notification\_failure) & D vs. C & -350 [-460, -230] & -0.78 & 0.0008 & 0.010 & lower \\
+4 & (wide-4, step4\_failure) & D vs. A & -1640 [-1820, -1450] & -0.92 & 0.0001 & 0.001 & lower \\
+5 & (wide-4, step4\_failure) & D vs. B & -1520 [-1700, -1330] & -0.88 & 0.0002 & 0.002 & lower \\
+6 & (wide-4, step4\_failure) & D vs. C & -1780 [-1980, -1590] & -0.95 & 0.0001 & 0.001 & lower \\
+7 & (trainticket, notification\_failure) & D vs. A & -190 [-280, -100] & -0.58 & 0.003 & 0.033 & lower \\
+8 & (trainticket, notification\_failure) & D vs. B & -140 [-220, -50] & -0.48 & 0.009 & 0.072 & no significant difference \\
+9 & (trainticket, notification\_failure) & D vs. C & -290 [-390, -180] & -0.72 & 0.001 & 0.012 & lower \\
+10 & (wide-4, step4\_failure) & D-Parallel vs. D-LIFO & -1640 [-1820, -1450] & -0.88 & 0.0001 & 0.001 & lower \\
+11 & (order, notification\_failure) & D-Parallel vs. D-LIFO & -759 [-910, -610] & -0.74 & 0.0004 & 0.005 & lower \\
+12 & (order, payment\_failure) & D-Parallel vs. D-LIFO & -18 [-70, +35] & -0.05 & 0.680 & 1.000 & no significant difference \\
+\bottomrule
+\end{tabular}
+\end{table}

@@ -1,0 +1,5 @@
+Path,Architecture,Centrally Coordinated Steps,EventBridge Rules,Retry Policy,Lease Constants
+A,Pure Orchestration,"All Steps (Order, Payment, Inventory, Notification)",0,"BackoffRate=2.0, MaxAttempts=3",N/A
+B,Pure Choreography,None (Autonomous),4 forward + 3 reverse rules,Linear Retry (EventBridge),N/A
+C,Static Hybrid,"Core Steps (Order, Payment, Inventory)",1 edge rule (Notification),Core Catch + SQS DLQ (maxReceive=3),N/A
+D,Dynamic Orchestration,On-Demand (Compensations Only),4 forward + 1 election rule,Idempotent Retry (compApplied<=1),"LEASE_TTL=3000ms, JITTER=500ms"

@@ -1,0 +1,5 @@
+Path,Fault Injection Type,Injected Runs,Consistent Runs,Timed Out Runs,Duplicate Delivery Ignored,Leader Takeover Recoveries
+A,Forward / Catch,60,60 (100%),0,N/A,N/A
+B,Reverse Event Chain,60,60 (100%),0,12,N/A
+C,Core Catch + SQS DLQ,60,60 (100%),0,N/A,N/A
+D,Dynamic DAG + Leader Crash,70,70 (100%),0,15,10 / 10 (100%)

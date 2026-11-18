@@ -1,0 +1,6 @@
+dag_width_k,parallel_makespan_ms,lifo_makespan_ms,participants,election_overhead_ms
+1,1000,1000,2,45
+2,1050,2000,4,52
+4,1100,4000,8,68
+6,1150,6000,12,85
+8,1200,8000,16,105

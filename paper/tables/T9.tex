@@ -1,0 +1,15 @@
+\begin{table}[htbp]
+\centering
+\caption{Summary Table T9}
+\label{tab:t9}
+\begin{tabular}{llll}
+\toprule
+Threat Category & Identified Threat & Theoretical Mitigation / Treatment & Empirical Quantification \\
+\midrule
+Internal Validity & LocalStack container cold-start delay & Discard first 10 runs per path as warm-up (warmup=true) & Measured: 3.5s cold-start vs 15ms warmed execution \\
+Internal Validity & Simulated work execution duration & WorkScale sensitivity analysis (0, 1, 3) & WorkScale=0 isolates pure coordination overhead \\
+Construct Validity & Metric extraction accuracy & Derived directly from immutable SagaTrace event logs & Deterministic assertion on synthetic traces with known timestamps \\
+External Validity & Synthetic vs enterprise domain & Evaluation across real E-Commerce and TrainTicket ports & Structural parallelism verified across both synthetic and ported shapes \\
+\bottomrule
+\end{tabular}
+\end{table}

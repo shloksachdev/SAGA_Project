@@ -1,0 +1,15 @@
+\begin{table}[htbp]
+\centering
+\caption{Summary Table T8}
+\label{tab:t8}
+\begin{tabular}{lllllll}
+\toprule
+Path & Fault Injection Type & Injected Runs & Consistent Runs & Timed Out Runs & Duplicate Delivery Ignored & Leader Takeover Recoveries \\
+\midrule
+A & Forward / Catch & 60 & 60 (100\%) & 0 & N/A & N/A \\
+B & Reverse Event Chain & 60 & 60 (100\%) & 0 & 12 & N/A \\
+C & Core Catch + SQS DLQ & 60 & 60 (100\%) & 0 & N/A & N/A \\
+D & Dynamic DAG + Leader Crash & 70 & 70 (100\%) & 0 & 15 & 10 / 10 (100\%) \\
+\bottomrule
+\end{tabular}
+\end{table}

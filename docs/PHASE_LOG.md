@@ -1065,3 +1065,94 @@ Re-verification: 8 / 8 direct invoke tests passed
 All 4 Lambdas deployed successfully and all tests passed.
 Exit code: 0
 ```
+
+
+---
+
+## Phase 11 (Early Track): Paper Tooling, Statistics Engine & Pre-Committed Analysis Plan
+
+### Goal
+Implement and verify publication-ready paper tooling, statistics engine, figures F1–F12, tables T1–T10, results skeleton, reproducibility bundle, and the pre-committed analysis plan (`docs/ANALYSIS_PLAN.md`) in parallel from Phase 8 onward as authorized in SPEC §4.
+
+### Completed Tasks
+1. `docs/ANALYSIS_PLAN.md`:
+   - Pre-registered formal hypotheses $H_1$ through $H_5$.
+   - Defined the 12 confirmatory primary comparisons subject to Holm-Bonferroni correction ($\alpha=0.05$).
+   - Specified statistical protocols: unit of analysis, 95% bootstrap CI on median (10,000 resamples), Cliff's delta effect sizes, Hodges-Lehmann median differences, right-censoring at 60 s for timeouts.
+   - Defined warm-up exclusion (first 10 runs per path), no outlier removal, and `workScale` $\in \{0, 1, 3\}$ sensitivity analysis.
+2. `paper/stats.py`:
+   - Pure statistical functions: `bootstrap_ci_median`, `mann_whitney`, `cliffs_delta`, `hodges_lehmann`, `holm_adjust`.
+3. `paper/style.py`:
+   - Standardized publication styling with Okabe-Ito colorblind palette (`#0072B2`, `#E69F00`, `#009E73`, `#D55E00`, `#CC79A7`).
+4. `paper/figures.py`:
+   - Automated generation of figures F1 through F12.
+   - Emits vector `.pdf`, 300 dpi `.png`, exact data `.csv`, and factual `.caption.md`.
+   - Caption $n$ strictly matches the data CSV row count.
+5. `paper/tables.py`:
+   - Automated generation of tables T1 through T10.
+   - Emits `.csv` and LaTeX `booktabs` `.tex`.
+   - Table T5 strictly matches the 12 primary comparisons in `docs/ANALYSIS_PLAN.md`.
+6. `paper/build_assets.py`:
+   - Master asset builder generating figures, tables, `paper/numbers.json`, `paper/numbers.tex`, `paper/results_skeleton.md`, `paper/manifest_for_paper.md`, and the reproducibility bundle (`paper/artifact/` with `REPRODUCE.md` and `SHA256SUMS`).
+7. `tests/phase11/`:
+   - Acceptance test suite (`test_stats.py`, `test_assets.py`) verifying bootstrap CI coverage $\ge 93\%$ on 200 synthetic datasets, Cliff's delta against hand-computed values, Holm adjustment on textbook example, Hodges-Lehmann against hand-computed values, figure data row counts matching captions, numbers matching between json and tex, T5 matching analysis plan, and SHA256SUMS verification.
+
+---
+
+### Evidence
+
+#### 1. Phase 11 Acceptance Tests (`pytest tests/phase11/ -v`)
+
+```text
+tests/phase11/test_assets.py::test_figures_f1_through_f12_exist PASSED   [  9%]
+tests/phase11/test_assets.py::test_figure_csv_row_count_matches_caption_n PASSED [ 18%]
+tests/phase11/test_assets.py::test_tables_t1_through_t10_exist PASSED    [ 27%]
+tests/phase11/test_assets.py::test_t5_matches_analysis_plan PASSED       [ 36%]
+tests/phase11/test_assets.py::test_numbers_json_matches_tex PASSED       [ 45%]
+tests/phase11/test_assets.py::test_artifact_bundle_and_sha256_verifies PASSED [ 54%]
+tests/phase11/test_stats.py::test_bootstrap_ci_coverage PASSED           [ 63%]
+tests/phase11/test_stats.py::test_cliffs_delta_hand_computed PASSED      [ 72%]
+tests/phase11/test_stats.py::test_holm_adjust_textbook_example PASSED    [ 81%]
+tests/phase11/test_stats.py::test_hodges_lehmann_hand_computed PASSED    [ 90%]
+tests/phase11/test_stats.py::test_mann_whitney_basic PASSED              [100%]
+
+============================= 11 passed in 16.28s =============================
+```
+
+#### 2. Asset Build Execution (`python paper/build_assets.py --runTag smoke-test --bundle`)
+
+```text
+[Assets] Starting publication asset build (runTag=smoke-test)...
+[Assets] Loaded 36 records from results/raw/smoke-test.jsonl
+[Figures] Generated F1 through F12 (.pdf, .png, .csv, .caption.md).
+[Tables] Generated T1 through T10 (.csv and .tex).
+[Bundle] Created reproducibility bundle in paper/artifact with SHA256SUMS.
+[Assets] Asset build complete. All figures, tables, numbers, and skeleton updated.
+```
+
+#### 3. Direct Invocation Regression (`.\test.ps1`)
+
+```text
+=== Re-verifying all 4 Lambda functions directly ===
+
+-- Order --
+  [PASS] create: {"orderId": "order-123", "status": "ORDER_CREATED"}
+  [PASS] cancel: {"orderId": "order-123", "status": "ORDER_CANCELLED"}
+
+-- Payment --
+  [PASS] charge: {"orderId": "order-123", "status": "PAYMENT_COMPLETED"}
+  [PASS] compensate: {"orderId": "order-123", "status": "PAYMENT_COMPENSATED"}
+
+-- Inventory --
+  [PASS] reserve: {"orderId": "order-123", "status": "INVENTORY_RESERVED"}
+  [PASS] release: {"orderId": "order-123", "status": "INVENTORY_RELEASED"}
+
+-- Notification --
+  [PASS] notify: {"orderId": "order-123", "status": "NOTIFICATION_SENT"}
+  [PASS] unnotify: {"orderId": "order-123", "status": "NOTIFICATION_RETRACTED"}
+
+=== Summary ===
+Re-verification: 8 / 8 direct invoke tests passed
+All 4 Lambdas deployed successfully and all tests passed.
+Exit code: 0
+```

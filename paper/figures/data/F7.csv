@@ -1,0 +1,4 @@
+scenario,election_time_ms,scheduling_makespan_ms,total_ms
+payment_fail,120,912,1032
+inv_fail,145,1150,1295
+notif_fail,160,1531,1691

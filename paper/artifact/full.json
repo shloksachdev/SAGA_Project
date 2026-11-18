@@ -1,0 +1,65 @@
+{
+  "name": "full",
+  "paths": ["A", "B", "C", "D"],
+  "workloads": ["order", "trainticket", "wide-4"],
+  "workScale": 1.0,
+  "repetitions": 20,
+  "warmupCount": 10,
+  "seed": 1337,
+  "scenarios": [
+    {
+      "name": "happy",
+      "count": 40,
+      "faults": {}
+    },
+    {
+      "name": "payment_failure",
+      "count": 20,
+      "faults": {
+        "Payment": {
+          "forward": "fail",
+          "errorName": "PaymentDeclined"
+        }
+      }
+    },
+    {
+      "name": "inventory_failure",
+      "count": 20,
+      "faults": {
+        "Inventory": {
+          "forward": "fail",
+          "errorName": "InventoryShortage"
+        }
+      }
+    },
+    {
+      "name": "notification_failure",
+      "count": 20,
+      "faults": {
+        "Notification": {
+          "forward": "fail"
+        }
+      }
+    },
+    {
+      "name": "transient_comp_failure",
+      "count": 10,
+      "faults": {
+        "Payment": {
+          "compFailFirstN": 1
+        }
+      }
+    },
+    {
+      "name": "leader_crash",
+      "count": 10,
+      "paths": ["D"],
+      "leaderFault": "crash_after:1",
+      "faults": {
+        "Notification": {
+          "forward": "fail"
+        }
+      }
+    }
+  ]
+}

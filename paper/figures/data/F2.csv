@@ -1,0 +1,4 @@
+workload,scenario,dag_layers,max_width,shape
+order,notification_failure,1,1,Chain (width=1)
+trainticket,notification_failure,3,1,Asymmetric (width=1)
+wide-4,notification_failure,2,3,Wide-Fan (width=3)

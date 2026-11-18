@@ -1,0 +1,4 @@
+work_scale,latency_path_a_ms,latency_path_b_ms,latency_path_d_ms
+0.0,250,180,220
+1.0,829,654,580
+3.0,2100,1850,1600

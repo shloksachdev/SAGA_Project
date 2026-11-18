@@ -1,0 +1,41 @@
+{
+  "name": "smoke",
+  "paths": ["A", "B", "C", "D"],
+  "workloads": ["order"],
+  "workScale": 0.0,
+  "repetitions": 2,
+  "warmupCount": 1,
+  "seed": 42,
+  "scenarios": [
+    {
+      "name": "happy",
+      "faults": {}
+    },
+    {
+      "name": "payment_failure",
+      "faults": {
+        "Payment": {
+          "forward": "fail",
+          "errorName": "PaymentDeclined"
+        }
+      }
+    },
+    {
+      "name": "inventory_failure",
+      "faults": {
+        "Inventory": {
+          "forward": "fail",
+          "errorName": "InventoryShortage"
+        }
+      }
+    },
+    {
+      "name": "notification_failure",
+      "faults": {
+        "Notification": {
+          "forward": "fail"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+\begin{table}[htbp]
+\centering
+\caption{Summary Table T10}
+\label{tab:t10}
+\begin{tabular}{lll}
+\toprule
+Parameter / Environmental Factor & Specification / Value & Configuration Location \\
+\midrule
+Operating System & Microsoft Windows 11 / WSL2 Linux & Manifest Host Information \\
+Python Runtime & Python 3.12.2 (x86\_64) & python --version \\
+LocalStack Cloud Emulator & LocalStack 3.8.0 Community (Docker localstack-main) & http://localhost:4566/\_localstack/health \\
+AWS SDK & Boto3 1.34.42 / Botocore 1.34.42 & pip list \\
+DynamoDB Lease Constants & LEASE\_TTL\_MS = 3000 ms, WATCH\_JITTER\_MS = 500 ms & common/policy.py \\
+Lambda Compute Configuration & 128 MB RAM, Python 3.12, 10s default timeout & deploy-lambda.ps1 \\
+Randomization Seed & seed = 1337 (full evaluation), seed = 42 (smoke) & experiments/configs/*.json \\
+\bottomrule
+\end{tabular}
+\end{table}

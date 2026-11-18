@@ -1,0 +1,4 @@
+offered_rate_sagas_per_sec,throughput_path_a,throughput_path_d,p95_latency_path_a_ms,p95_latency_path_d_ms
+2.0,2.0,2.0,1200,950
+5.0,4.9,5.0,1500,1100
+10.0,8.8,9.4,2400,1800

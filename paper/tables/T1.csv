@@ -1,0 +1,7 @@
+Study,Coordinator Fixed/Elected,Always-on/Triggered,Scope,Compensation Model,Evaluation Context
+Garcia-Molina & Salem [1],Fixed Central DB,Always-on,Monolithic DB,Sequential LIFO,Theoretical
+AWS Step Functions [2],Fixed Cloud State Machine,Always-on,Workflows,Sequential/Branch Catch,Cloud Service
+EventBridge Choreography [3],None (Decentralized),None,Event Routing,Reverse Cascade Chain,Cloud Service
+Static Hybrid Models [4],Partitioned Fixed Core,Always-on Core,Core/Edge Split,Core Catch + SQS DLQ,Industrial
+Dynamic HPC Schedulers [5],Central DAG Master,Always-on,Cluster Jobs,DAG Rescheduling,HPC Clusters
+This Work (Path D),Elected Temporary,Triggered On-Failure,Serverless Sagas,Dynamic Parallel DAG,LocalStack / Cloud

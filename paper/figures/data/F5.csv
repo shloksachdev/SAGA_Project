@@ -1,0 +1,4 @@
+workload,parallel_makespan_ms,lifo_makespan_ms,reduction_pct
+wide-2,1200,1600,25.0
+wide-4,1868,3508,46.75
+wide-6,2400,5200,53.85

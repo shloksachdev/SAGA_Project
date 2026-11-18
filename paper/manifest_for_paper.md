@@ -1,0 +1,3 @@
+### Experimental Setup Paragraph
+
+Experiments were executed on Microsoft Windows 11 (x86_64, 8 physical CPU cores, 16 GB RAM) hosting LocalStack Community version 3.8.0 inside Docker. Microservices were deployed as AWS Lambda functions running Python 3.12 with 128 MB allocated memory and 10 s default timeout. Inter-service communications utilized AWS EventBridge custom event buses and AWS Step Functions Standard Workflows. DynamoDB on-demand tables managed saga state, traces, and atomic conditional leases (`LEASE_TTL_MS = 3000 ms`, `WATCH_JITTER_MS = 500 ms`). Seeded pseudorandom generators (`seed = 1337`) governed randomized execution interleaving across paths.

@@ -1,0 +1,5 @@
+Path,Architecture,ASL Lambda Refs,Forward EB Rules,Reverse/Comp EB Rules,Orchestrator Static Refs (D5),Total Coupling Score
+A,Pure Orchestration,4,0,0,N/A,4
+B,Pure Choreography,0,4,3,N/A,7
+C,Static Hybrid,3,1,0,N/A,4
+D,Dynamic Orchestration,0,4,1,0,5

@@ -1,0 +1,6 @@
+path,stage,start_ms,end_ms,duration_ms
+A,Sequential Catch,0,1200,1200
+B,Reverse Chain,0,950,950
+C,Core SFN + DLQ,0,1100,1100
+D,Election,0,150,150
+D,Parallel DAG,150,650,500

@@ -1,0 +1,5 @@
+path,paradigm,stages_count,compensation_strategy
+A,Pure Orchestration (Step Functions ASL),4,Central Sequential Catch
+B,Pure Choreography (EventBridge Bus),4,Reverse Event Cascade
+C,Static Hybrid (SFN Core + EB Edge),3,Core Catch + SQS DLQ
+D,Dynamic Orchestration (P2P + DDB Leases),4,Elected Leader DAG

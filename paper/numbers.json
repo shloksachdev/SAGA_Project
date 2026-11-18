@@ -1,0 +1,91 @@
+{
+  "numOrderNotifMedianD": {
+    "value": 580,
+    "ci_lower": 540,
+    "ci_upper": 630,
+    "n": 20,
+    "unit": "ms"
+  },
+  "numOrderNotifMedianA": {
+    "value": 829,
+    "ci_lower": 790,
+    "ci_upper": 870,
+    "n": 20,
+    "unit": "ms"
+  },
+  "numOrderNotifMedianB": {
+    "value": 654,
+    "ci_lower": 620,
+    "ci_upper": 700,
+    "n": 20,
+    "unit": "ms"
+  },
+  "numOrderNotifMedianC": {
+    "value": 944,
+    "ci_lower": 900,
+    "ci_upper": 1010,
+    "n": 20,
+    "unit": "ms"
+  },
+  "numAblationReductionWideFour": {
+    "value": 46.75,
+    "ci_lower": 41.2,
+    "ci_upper": 52.1,
+    "n": 20,
+    "unit": "%"
+  },
+  "numWideFourParMakespan": {
+    "value": 1868,
+    "ci_lower": 1750,
+    "ci_upper": 1980,
+    "n": 20,
+    "unit": "ms"
+  },
+  "numWideFourLifoMakespan": {
+    "value": 3508,
+    "ci_lower": 3350,
+    "ci_upper": 3650,
+    "n": 20,
+    "unit": "ms"
+  },
+  "numCouplingA": {
+    "value": 4,
+    "unit": "references"
+  },
+  "numCouplingB": {
+    "value": 7,
+    "unit": "rules"
+  },
+  "numCouplingC": {
+    "value": 4,
+    "unit": "references/rules"
+  },
+  "numCouplingD": {
+    "value": 5,
+    "unit": "rules"
+  },
+  "numDStaticOrchestratorRefs": {
+    "value": 0,
+    "unit": "references"
+  },
+  "numCostPer1kTxnsA": {
+    "value": 0.1547,
+    "unit": "USD"
+  },
+  "numCostPer1kTxnsB": {
+    "value": 0.0112,
+    "unit": "USD"
+  },
+  "numCostPer1kTxnsC": {
+    "value": 0.1375,
+    "unit": "USD"
+  },
+  "numCostPer1kTxnsD": {
+    "value": 0.0251,
+    "unit": "USD"
+  },
+  "numConsistencyRateD": {
+    "value": 100.0,
+    "unit": "%"
+  }
+}
