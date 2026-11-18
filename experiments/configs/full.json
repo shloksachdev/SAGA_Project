@@ -13,7 +13,28 @@
       "faults": {}
     },
     {
+      "name": "notification_failure",
+      "workloads": ["order", "trainticket"],
+      "count": 20,
+      "faults": {
+        "Notification": {
+          "forward": "fail"
+        }
+      }
+    },
+    {
+      "name": "step4_failure",
+      "workloads": ["wide-4"],
+      "count": 20,
+      "faults": {
+        "Step4": {
+          "forward": "fail"
+        }
+      }
+    },
+    {
       "name": "payment_failure",
+      "workloads": ["order"],
       "count": 20,
       "faults": {
         "Payment": {
@@ -24,6 +45,7 @@
     },
     {
       "name": "inventory_failure",
+      "workloads": ["order"],
       "count": 20,
       "faults": {
         "Inventory": {
@@ -33,7 +55,22 @@
       }
     },
     {
-      "name": "notification_failure",
+      "name": "ablation_lifo_wide4",
+      "workloads": ["wide-4"],
+      "paths": ["D"],
+      "compMode": "lifo",
+      "count": 20,
+      "faults": {
+        "Step4": {
+          "forward": "fail"
+        }
+      }
+    },
+    {
+      "name": "ablation_lifo_order_notif",
+      "workloads": ["order"],
+      "paths": ["D"],
+      "compMode": "lifo",
       "count": 20,
       "faults": {
         "Notification": {
@@ -42,7 +79,21 @@
       }
     },
     {
+      "name": "ablation_lifo_order_payment",
+      "workloads": ["order"],
+      "paths": ["D"],
+      "compMode": "lifo",
+      "count": 20,
+      "faults": {
+        "Payment": {
+          "forward": "fail",
+          "errorName": "PaymentDeclined"
+        }
+      }
+    },
+    {
       "name": "transient_comp_failure",
+      "workloads": ["order"],
       "count": 10,
       "faults": {
         "Payment": {
@@ -52,8 +103,9 @@
     },
     {
       "name": "leader_crash",
-      "count": 10,
+      "workloads": ["order"],
       "paths": ["D"],
+      "count": 10,
       "leaderFault": "crash_after:1",
       "faults": {
         "Notification": {

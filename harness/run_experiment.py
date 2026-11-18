@@ -21,6 +21,7 @@ from common.contracts import SagaEnvelope
 from harness.consistency import check_consistency
 from harness.cost import calculate_run_cost, load_pricing
 from harness.derive import derive_for_saga
+from harness.manifest import append_to_experiment_log, create_manifest, write_manifest
 from paths.a.run import start_saga as start_saga_a
 from paths.b.run import start_saga as start_saga_b
 from paths.c.run import start_saga as start_saga_c
@@ -73,9 +74,13 @@ def build_execution_plan(config: Dict[str, Any]) -> List[Dict[str, Any]]:
         for scen in scenarios:
             scen_name = scen.get("name", "unnamed")
             scen_paths = scen.get("paths", paths)
+            scen_workloads = scen.get("workloads")
+            if scen_workloads and wl not in scen_workloads:
+                continue
             scen_count = scen.get("count", default_reps)
             faults = scen.get("faults", {})
             leader_fault = scen.get("leaderFault", None)
+            comp_mode = scen.get("compMode", "parallel")
 
             for p in scen_paths:
                 if p not in paths:
@@ -89,6 +94,7 @@ def build_execution_plan(config: Dict[str, Any]) -> List[Dict[str, Any]]:
                             "scenario": scen_name,
                             "faults": faults,
                             "leaderFault": leader_fault,
+                            "compMode": comp_mode,
                             "warmup": False,
                         }
                     )
@@ -111,6 +117,7 @@ def run_single_experiment(
     scenario = item["scenario"]
     faults = item["faults"]
     leader_fault = item.get("leaderFault")
+    comp_mode = item.get("compMode", "parallel")
     is_warmup = item.get("warmup", False)
 
     saga_id = f"exp-{run_tag[:6]}-{path.lower()}-{uuid.uuid4().hex[:8]}"
@@ -124,6 +131,7 @@ def run_single_experiment(
         workScale=work_scale,
         faults=faults,
         leaderFault=leader_fault,
+        compMode=comp_mode,
     )
 
     t0 = time.time()
@@ -141,6 +149,14 @@ def run_single_experiment(
 
     # Derive metrics from SagaTrace
     derived = derive_for_saga(saga_id)
+    # Right-censoring at 60 s for timed-out or incomplete runs (SPEC §4 Phase 10 Task 4)
+    if timed_out and derived.get("compensation_latency") is None:
+        derived["compensation_latency"] = 60000.0
+        derived["scheduling_makespan"] = 60000.0
+        derived["censored"] = True
+    else:
+        derived["censored"] = False
+
     # Check consistency
     is_consistent, violations = check_consistency(saga_id)
     # Calculate costs
@@ -152,6 +168,7 @@ def run_single_experiment(
         "path": path,
         "workload": workload,
         "scenario": scenario,
+        "compMode": comp_mode,
         "warmup": is_warmup,
         "timedOut": timed_out,
         "error": exec_error,
@@ -182,6 +199,7 @@ def run_experiment(
     print(f"\n[Experiment] Loaded config '{config_path}': {len(plan)} total runs planned under runTag '{tag}'")
     print(f"[Experiment] Output JSONL: {jsonl_path}")
 
+    t0_run = time.time()
     all_records = []
     with open(jsonl_path, "w", encoding="utf-8") as f_jsonl:
         for idx, item in enumerate(plan):
@@ -191,9 +209,27 @@ def run_experiment(
             f_jsonl.write(json.dumps(record) + "\n")
             f_jsonl.flush()
 
+    t1_run = time.time()
+
     # Generate summary CSV
     _write_summary_csv(all_records, csv_path)
     print(f"[Experiment] Completed {len(all_records)} runs. Summary written to {csv_path}")
+
+    # Generate and write provenance manifest (SPEC §4 Phase 10 Task 2)
+    manifest_path = os.path.join(raw_dir, f"{tag}.manifest.json")
+    manifest = create_manifest(
+        run_tag=tag,
+        config_path=config_path,
+        start_time=t0_run,
+        end_time=t1_run,
+        records=all_records,
+        seed=int(config.get("seed", 42)),
+    )
+    write_manifest(manifest, manifest_path)
+    append_to_experiment_log(manifest)
+    print(f"[Experiment] Provenance manifest written to {manifest_path}")
+    print(f"[Experiment] Provenance audit entry appended to docs/EXPERIMENT_LOG.md")
+
     return jsonl_path
 
 
