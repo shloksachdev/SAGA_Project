@@ -1258,3 +1258,97 @@ Re-verification: 8 / 8 direct invoke tests passed
 All 4 Lambdas deployed successfully and all tests passed.
 Exit code: 0
 ```
+
+
+---
+
+## Phase 10: Frozen Analysis Plan, Full Experiment Run, Provenance
+
+### Goal
+Collect real benchmark data across the entire experimental matrix under the pre-committed analysis plan, capturing complete provenance so every figure, table, and statistical metric can be independently audited and reproduced.
+
+### Completed Tasks
+1. **Prerequisite Gate Verification**:
+   - Confirmed `docs/ANALYSIS_PLAN.md` locked and pre-committed at commit `2ec6cac`.
+2. **Provenance & Manifest Generator (`harness/manifest.py`)**:
+   - Implemented automated manifest builder hooked into `run_experiment.py`.
+   - Captures: Git commit (`36942e1`), branch, dirty status (`is_dirty: false`), LocalStack version (`2026.8.1`), host environment (`Windows 11`, 12 vCPUs, 15.69 GB RAM, `Docker 29.4.0`), Python 3.12, library versions (`boto3`, `botocore`, `simpy`, `scipy`, `numpy`, `matplotlib`, `docx`), SHA-256 of experiment config (`full.json`) and `docs/ANALYSIS_PLAN.md`, and exact execution counts.
+3. **Execution & Audit Logging (`docs/EXPERIMENT_LOG.md`)**:
+   - Automatic execution audit entry generator writing markdown provenance records for every experiment run.
+4. **Full Experiment Run (`experiments/configs/full.json`)**:
+   - Executed 292 randomized, interleaved transactions across Paths A, B, C, and D, covering workloads `order`, `trainticket`, and `wide-4`.
+   - Covered all 12 primary confirmatory comparisons registered in `docs/ANALYSIS_PLAN.md` ($n=10$ per cell).
+   - Handled right-censored timeouts at 60s per SPEC §4 Task 4.
+5. **Asset Re-generation & Reproducibility Bundle**:
+   - Executed `python paper/build_assets.py --runTag full-evaluation --bundle`.
+   - Emitted updated figures F1–F12, LaTeX booktabs / CSV tables T1–T10, `paper/numbers.json`, `paper/numbers.tex`, and `paper/artifact/` reproducibility bundle with verified `SHA256SUMS`.
+   - Regenerated `BTP_Report_SAGA.docx` with updated full-evaluation assets.
+
+---
+
+### Evidence
+
+#### 1. Manifest Verification (`results/raw/full-evaluation.manifest.json`)
+
+```json
+{
+  "runTag": "full-evaluation",
+  "configPath": "experiments/configs/full.json",
+  "configSha256": "60c80e3c2163655ac28bbf499ea12b40a6f20ec4037a4905ca3aefd865891ded",
+  "analysisPlanSha256": "391a8ca202f6ddee7240c482cf4cb26826e04834b107d671d51ecd856a6ab1bd",
+  "seed": 1337,
+  "counts": {
+    "totalRuns": 292,
+    "warmupCount": 12,
+    "measurementCount": 280,
+    "timeoutCount": 0,
+    "errorCount": 16,
+    "consistencyRate": 89.04
+  },
+  "git": {
+    "commit": "36942e1c7f6763aaed580fcf02eb7a950d06915a",
+    "branch": "master",
+    "is_dirty": false,
+    "analysis_plan_commit": "2ec6cacd19765bcdb66f751fb8b22b1377d2884b"
+  }
+}
+```
+
+#### 2. Phase 10 Acceptance Tests (`pytest tests/phase10/ -v`)
+
+```text
+tests/phase10/test_manifest.py::test_compute_sha256_deterministic PASSED [ 20%]
+tests/phase10/test_manifest.py::test_git_info_structure PASSED           [ 40%]
+tests/phase10/test_manifest.py::test_environment_probes PASSED           [ 60%]
+tests/phase10/test_manifest.py::test_manifest_creation_and_writing PASSED [ 80%]
+tests/phase10/test_manifest.py::test_append_to_experiment_log PASSED     [100%]
+
+======================== 5 passed, 1 warning in 2.58s =========================
+```
+
+#### 3. Phase 11 Full Dataset Verification (`pytest tests/phase11/ -v`)
+
+```text
+tests/phase11/test_assets.py::test_figures_f1_through_f12_exist PASSED   [  9%]
+tests/phase11/test_assets.py::test_figure_csv_row_count_matches_caption_n PASSED [ 18%]
+tests/phase11/test_assets.py::test_tables_t1_through_t10_exist PASSED    [ 27%]
+tests/phase11/test_assets.py::test_t5_matches_analysis_plan PASSED       [ 36%]
+tests/phase11/test_assets.py::test_numbers_json_matches_tex PASSED       [ 45%]
+tests/phase11/test_assets.py::test_artifact_bundle_and_sha256_verifies PASSED [ 54%]
+tests/phase11/test_stats.py::test_bootstrap_ci_coverage PASSED           [ 63%]
+tests/phase11/test_stats.py::test_cliffs_delta_hand_computed PASSED      [ 72%]
+tests/phase11/test_stats.py::test_holm_adjust_textbook_example PASSED    [ 81%]
+tests/phase11/test_stats.py::test_hodges_lehmann_hand_computed PASSED    [ 90%]
+tests/phase11/test_stats.py::test_mann_whitney_basic PASSED              [100%]
+
+============================= 11 passed in 1.93s ==============================
+```
+
+#### 4. Direct Invocation Regression (`.\test.ps1`)
+
+```text
+=== Summary ===
+Re-verification: 8 / 8 direct invoke tests passed
+All 4 Lambdas deployed successfully and all tests passed.
+Exit code: 0
+```

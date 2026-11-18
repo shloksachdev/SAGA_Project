@@ -18,3 +18,21 @@
 - **Anomalies / Field Notes**: None observed (clean execution)
 
 ---
+## Experiment Run: `full-evaluation`
+- **Date**: 2026-11-18 19:57:54 UTC
+- **Config**: `experiments/configs/full.json` (SHA-256: `60c80e3c2163655a...`)
+- **Analysis Plan**: Pre-registered SHA-256 `391a8ca202f6ddee...` (Commit `2ec6cacd`)
+- **Git State**: Commit `36942e1c` on `master` (Dirty: `False`)
+- **LocalStack**: Version `2026.8.1` (`http://localhost:4566`)
+- **Host**: `Windows-11-10.0.26300-SP0` (12 vCPUs, 15.69 GB RAM, `Docker version 29.4.0, build 9d7ad9f`)
+- **Execution Counts**:
+  - Total Runs: 292
+  - Measurement Runs: 280
+  - Warm-up Runs: 12
+  - Right-Censored Timeouts: 0
+  - Unhandled Errors: 16
+  - Invariant Consistency Rate: 89.04%
+- **Wall-Clock Duration**: 7057.54 seconds
+- **Anomalies / Field Notes**: None observed (clean execution)
+
+---
